@@ -31,4 +31,4 @@ import { DataImportModule } from "./data-import/data-import.module";
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule { }

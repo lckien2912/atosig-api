@@ -6,7 +6,7 @@ export class Signal {
     @PrimaryGeneratedColumn("uuid")
     id: string;
 
-    @Column({ type: "varchar", length: 10, unique: true, nullable: false })
+    @Column({ type: "varchar", length: 10, nullable: false })
     symbol: string;
 
     @Column({ type: "varchar", length: 10 })
@@ -18,7 +18,7 @@ export class Signal {
     @Column({ type: "date", nullable: true })
     signal_date: Date;
 
-    @Column({ type: "date" })
+    @Column({ type: "date", nullable: true })
     entry_date: Date;
 
     @Column({ type: "decimal", precision: 10, scale: 2 })

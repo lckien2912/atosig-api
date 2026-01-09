@@ -44,7 +44,10 @@ export class DataImportService {
                 .on("data", (data: unknown) => {
                     const row = data as CsvRow;
                     try {
-                        if (!row.ticker) return;
+                        if (!row.ticker) {
+                            console.warn('Skipping row: missing ticker', row);
+                            return;
+                        }
 
                         const signal = this.createSignalFromRow(row);
                         signals.push(signal);
@@ -57,9 +60,12 @@ export class DataImportService {
                         try {
                             if (signals.length > 0) {
                                 await this.signalRepository.save(signals);
+                            } else {
+                                console.warn('No signals to save.');
                             }
                             resolve(true);
                         } catch (error) {
+                            console.error('Error saving signals:', error);
                             reject(error instanceof Error ? error : new Error(String(error)));
                         }
                     })().catch((error) =>
