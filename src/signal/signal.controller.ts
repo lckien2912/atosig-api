@@ -1,27 +1,21 @@
-import { Controller, Get, Param } from "@nestjs/common";
+import { Controller, Get, Param, Query } from "@nestjs/common";
 import { SignalService } from "./signal.service";
 
 @Controller("signals")
 export class SignalController {
-  constructor(private readonly signalService: SignalService) {}
+    constructor(private readonly signalService: SignalService) { }
 
-  @Get("featured")
-  getFeatured() {
-    return this.signalService.getFeatured();
-  }
+    @Get()
+    findAll(
+        @Query("page") page: number = 1,
+        @Query("limit") limit: number = 10,
+        @Query("duration") duration?: string,
+    ) {
+        return this.signalService.findAll({ page, limit, duration });
+    }
 
-  @Get("current")
-  getCurrent() {
-    return this.signalService.getCurrent();
-  }
-
-  @Get("history")
-  getHistory() {
-    return this.signalService.getHistory();
-  }
-
-  @Get(":id")
-  findOne(@Param("id") id: string) {
-    return this.signalService.findOne(id);
-  }
+    @Get(":id")
+    findOne(@Param("id") id: string) {
+        return this.signalService.findOne(id);
+    }
 }

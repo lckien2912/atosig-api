@@ -5,6 +5,7 @@ import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
 import { SignalModule } from "./signal/signal.module";
 import { DataImportModule } from "./data-import/data-import.module";
+import { CrawlerModule } from "./crawler/crawler.module";
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { DataImportModule } from "./data-import/data-import.module";
     }),
     SignalModule,
     DataImportModule,
+    CrawlerModule,
   ],
   controllers: [AppController],
   providers: [AppService],
