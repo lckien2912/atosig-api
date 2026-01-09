@@ -1,8 +1,21 @@
+import { Column } from "typeorm";
+
 export class SignalFinancials {
-    intrinsic_value: number;
-    target_price: number;
-    market_cap: string;
-    pe_ratio: number;
-    roe: string;
-    debt_to_equity: number;
+  @Column("decimal")
+  intrinsic_value: number;
+
+  @Column("decimal")
+  target_price: number;
+
+  @Column()
+  market_cap: string;
+
+  @Column("decimal")
+  pe_ratio: number;
+
+  @Column()
+  roe: string;
+
+  @Column("decimal")
+  debt_to_equity: number;
 }

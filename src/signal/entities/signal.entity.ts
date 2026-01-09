@@ -1,31 +1,134 @@
-import { SignalFinancials } from './signal-financials.entity';
+import { Entity, Column, PrimaryGeneratedColumn } from "typeorm";
+import { SignalStatus } from "../enums/signal-status.enum";
 
+@Entity("signals")
 export class Signal {
-    id: number;
+    @PrimaryGeneratedColumn("uuid")
+    id: string;
+
+    @Column({ type: "varchar", length: 10, unique: true, nullable: false })
     symbol: string;
-    tradingViewSymbol: string; // e.g. "HOSE:ACB"
-    full_name: string;
-    description: string;
-    image_url?: string;
 
-    // Trading Info
-    current_price: number;
-    entry_zone_min: number;
-    entry_zone_max: number;
-    expected_profit: number; // percentage
-    holding_time: string;
+    @Column({ type: "varchar", length: 10 })
+    exchange: string;
 
-    stop_loss: number;
-    take_profit_1: number;
-    take_profit_2: number;
-    take_profit_3?: number;
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
+    price_base: number;
 
-    // Status/Progress
-    status_message: string; // e.g., "Đã đạt TP1"
-    remaining_to_next_tp?: number; // e.g., 2.36
-    progress: number; // 0-100 for the progress bar
+    @Column({ type: "date", nullable: true })
+    signal_date: Date;
 
-    financials: SignalFinancials;
+    @Column({ type: "date" })
+    entry_date: Date;
 
+    @Column({ type: "decimal", precision: 10, scale: 2 })
+    entry_price_min: number; // Map từ entry_price
+
+    @Column({
+        type: "decimal",
+        precision: 10,
+        scale: 2,
+        default: 0,
+        nullable: true,
+    })
+    entry_price_max: number; // Map từ entry_price (hoặc logic vùng)
+
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
+    stop_loss_price: number;
+
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
+    tp1_price: number;
+
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
+    tp2_price: number;
+
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
+    tp3_price: number;
+
+    @Column({
+        type: "decimal",
+        precision: 10,
+        scale: 2,
+        default: 0,
+        nullable: true,
+    })
+    tp1_pct: number;
+
+    @Column({
+        type: "decimal",
+        precision: 10,
+        scale: 2,
+        default: 0,
+        nullable: true,
+    })
+    tp2_pct: number;
+
+    @Column({
+        type: "decimal",
+        precision: 10,
+        scale: 2,
+        default: 0,
+        nullable: true,
+    })
+    tp3_pct: number;
+
+    @Column({
+        type: "decimal",
+        precision: 10,
+        scale: 2,
+        default: 0,
+        nullable: true,
+    })
+    sl_price: number;
+
+    @Column({
+        type: "decimal",
+        precision: 10,
+        scale: 6,
+        default: 0,
+        nullable: true,
+    })
+    rr_tp1: number;
+
+    @Column({
+        type: "decimal",
+        precision: 10,
+        scale: 6,
+        default: 0,
+        nullable: true,
+    })
+    rr_tp2: number;
+
+    @Column({
+        type: "decimal",
+        precision: 10,
+        scale: 6,
+        default: 0,
+        nullable: true,
+    })
+    rr_tp3: number;
+
+    @Column({ type: "decimal", precision: 10, scale: 6, default: 0, nullable: true })
+    atr_pct: number;
+
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 0, nullable: true })
+    recent_low: number;
+
+    @Column({ type: "date", nullable: true })
+    holding_period: Date;
+
+    @Column({ type: "enum", enum: SignalStatus, default: SignalStatus.PENDING })
+    status: SignalStatus;
+
+    @Column({ type: "decimal", nullable: true })
+    current_price: number; // Giá cập nhật realtime
+
+    @Column({ default: true })
+    is_premium: boolean;
+
+    @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP" })
     created_at: Date;
+
+    @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP" })
+    updated_at: Date;
 }
