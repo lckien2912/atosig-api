@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
+import { ConfigService } from "@nestjs/config";
 import { HttpService } from "@nestjs/axios";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, In } from "typeorm";
@@ -15,22 +16,23 @@ export class CrawlerService {
     // cờ tránh trạng thái job chồng chéo
     private isJobRunning = false;
 
-    // Cấu hình từ ssi
-    private readonly ssiConfig = {
-        authUrl: 'https://fc-data.ssi.com.vn/api/v2/Market/AccessToken',
-        priceUrl: 'https://fc-data.ssi.com.vn/api/v2/Market/DailyStockPrice',
-        consumerID: '9386329312674e1c8e359084531eccb0',
-        consumerSecret: '5ea3e893cbae4ec7ac461df63c68bb58'
-    }
-
     private accessToken: string = '';
     private tokenExpiry: number = 0;
+    private readonly ssiConfig;
 
     constructor(
         @InjectRepository(Signal)
         private readonly signalRepository: Repository<Signal>,
-        private readonly httpService: HttpService
-    ) { }
+        private readonly httpService: HttpService,
+        private readonly configService: ConfigService
+    ) {
+        this.ssiConfig = {
+            authUrl: this.configService.get<string>('SSI_AUTH_URL'),
+            priceUrl: this.configService.get<string>('SSI_PRICE_URL'),
+            consumerID: this.configService.get<string>('SSI_CONSUMER_ID'),
+            consumerSecret: this.configService.get<string>('SSI_CONSUMER_SECRET')
+        }
+    }
 
     /**
      * Get Access Token from SSI
@@ -131,6 +133,36 @@ export class CrawlerService {
         }
     }
 
+    /**
+     * Cronjob 1hour
+     * update is_expired
+     */
+    @Cron(CronExpression.EVERY_HOUR)
+    async handleCronUpdateIsExpired() {
+        this.logger.log('--- Checking for expired signals ---');
+
+        try {
+            const now = new Date();
+
+            const result = await this.signalRepository
+                .createQueryBuilder()
+                .update(Signal)
+                .set({ is_expired: true })
+                .where("is_expired = :isExpired", { isExpired: false })
+                .andWhere("holding_period < :now", { now })
+                .andWhere("status != :status", { status: SignalStatus.CLOSED })
+                .execute();
+
+            if (result.affected && result.affected > 0) {
+                this.logger.log(`✅ Auto-expired ${result.affected} signals.`);
+            } else {
+                this.logger.log('No signals expired this hour.');
+            }
+        } catch (error) {
+            this.logger.error('Error auto-expiring signals', error);
+        }
+    }
+
     private async fetchAndUpdateOne(symbol: string, token: string, dateStr: string): Promise<boolean> {
         try {
             // config request ssi -> crawls[0]
@@ -152,7 +184,7 @@ export class CrawlerService {
 
             const data = response.data;
 
-            // Check cau truc tra ve
+            // Check data structure return
             if (data && data.data && data.data.length > 0) {
                 const latestData = data.data[0];
 
@@ -162,14 +194,24 @@ export class CrawlerService {
 
                 const currentPrice = parseFloat(rawPrice);
 
+                const rawChange = latestData.PerPriceChange || latestData.ChangePercent;
+                const changePercent = parseFloat(rawChange);
+
                 if (currentPrice && !isNaN(currentPrice)) {
+
+                    const updateData: any = {
+                        current_price: currentPrice,
+                        updated_at: new Date()
+                    };
+
+                    if (!isNaN(changePercent)) {
+                        updateData.current_change_percent = changePercent;
+                    }
+
                     const updateResult = await this.signalRepository
                         .createQueryBuilder()
                         .update(Signal)
-                        .set({
-                            current_price: currentPrice,
-                            updated_at: new Date()
-                        })
+                        .set(updateData)
                         .where("symbol = :symbol", { symbol })
                         .andWhere("status IN (:...statuses)", {
                             statuses: [SignalStatus.ACTIVE, SignalStatus.PENDING]

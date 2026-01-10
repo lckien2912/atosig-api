@@ -3,3 +3,12 @@ export enum SignalStatus {
   ACTIVE = "ACTIVE",
   CLOSED = "CLOSED",
 }
+
+export enum SignalDisplayStatus {
+  BUY_ZONE = 1,    // Vùng mua
+  TAKE_PROFIT_1 = 2, // TP1
+  TAKE_PROFIT_2 = 3, // TP2
+  TAKE_PROFIT_3 = 4, // TP3
+  STOP_LOSS = 5,   // Chạm cắt lỗ
+  EXPIRED = 6      // Hết hạn nắm giữ
+}

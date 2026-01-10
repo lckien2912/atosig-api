@@ -1,5 +1,6 @@
-import { Entity, Column, PrimaryGeneratedColumn } from "typeorm";
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, BeforeInsert } from "typeorm";
 import { SignalStatus } from "../enums/signal-status.enum";
+import { v4 as uuidv4 } from 'uuid';
 
 @Entity("signals")
 export class Signal {
@@ -75,15 +76,6 @@ export class Signal {
     @Column({
         type: "decimal",
         precision: 10,
-        scale: 2,
-        default: 0,
-        nullable: true,
-    })
-    sl_price: number;
-
-    @Column({
-        type: "decimal",
-        precision: 10,
         scale: 6,
         default: 0,
         nullable: true,
@@ -121,14 +113,27 @@ export class Signal {
     status: SignalStatus;
 
     @Column({ type: "decimal", nullable: true })
-    current_price: number; // Giá cập nhật realtime
+    current_price: number; // Giá cập nhật realtime, cronjob tu ssi
+
+    @Column({ type: "decimal", precision: 5, scale: 2, default: 0, nullable: true })
+    current_change_percent: number; // % thay đổi so với giá cũ
 
     @Column({ default: true })
     is_premium: boolean;
 
-    @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP" })
+    @CreateDateColumn()
     created_at: Date;
 
-    @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP" })
+    @Column({ default: false })
+    is_expired: boolean;
+
+    @UpdateDateColumn()
     updated_at: Date;
+
+    @BeforeInsert()
+    generateId() {
+        if (!this.id) {
+            this.id = uuidv4();
+        }
+    }
 }
