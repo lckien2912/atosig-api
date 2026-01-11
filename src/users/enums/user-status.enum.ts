@@ -12,6 +12,11 @@ export enum KycStatus {
     REJECTED = 'REJECTED'      // Bị từ chối
 }
 
+export enum UserStatus {
+    ACTIVE = 'ACTIVE',
+    INACTIVE = 'INACTIVE',
+    DEACTIVATED = 'DEACTIVATED'
+}
 export enum UserRole {
     ADMIN = 'ADMIN',
     USER = 'USER',

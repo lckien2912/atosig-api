@@ -1,5 +1,6 @@
-import { Column, Entity, PrimaryGeneratedColumn } from "typeorm";
+import { BeforeInsert, Column, Entity, PrimaryGeneratedColumn } from "typeorm";
 import { KycStatus, UserRole, UserSubscriptionTier } from "../enums/user-status.enum";
+import { v4 as uuidv4 } from 'uuid';
 
 @Entity('users')
 export class User {
@@ -53,4 +54,11 @@ export class User {
 
     @Column({ type: "timestamp", default: () => 'CURRENT_TIMESTAMP', onUpdate: 'CURRENT_TIMESTAMP' })
     updated_at: Date;
+
+    @BeforeInsert()
+    generateId() {
+        if (!this.id) {
+            this.id = uuidv4();
+        }
+    }
 }

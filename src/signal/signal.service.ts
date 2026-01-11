@@ -12,7 +12,7 @@ export class SignalService {
         @InjectRepository(Signal) private signalsRepository: Repository<Signal>,
     ) { }
 
-    async findAll(query: { page: number; limit: number; duration?: string }) {
+    async findAll(query: { page: number; limit: number; duration?: string, currentUser?: any }) {
         const { page, limit, duration } = query;
         const skip = (page - 1) * limit;
 
@@ -35,7 +35,7 @@ export class SignalService {
         });
 
         return {
-            data: signals.map((signal) => this.mapToResponse(signal)),
+            data: signals.map((signal) => this.mapToResponse(signal, query.currentUser)),
             meta: {
                 total,
                 page: Number(page),
@@ -45,17 +45,21 @@ export class SignalService {
         };
     }
 
-    async findOne(id: string) {
+    async findOne(id: string, currentUser?: any) {
         const signal = await this.signalsRepository.findOne({
             where: { id },
         });
         if (!signal) {
             throw new NotFoundException(`Signal with ID ${id} not found`)
         };
-        return this.mapToResponse(signal);
+        return {
+            data: this.mapToResponse(signal, currentUser)
+        };
     }
 
-    private mapToResponse(signal: Signal): SignalResponseDto {
+    private mapToResponse(signal: Signal, currentUser?: any): SignalResponseDto {
+
+        const isGuest = !currentUser;
 
         const entryMin = Number(signal.entry_price_min);
         const entryMax = Number(signal.entry_price_max || signal.entry_price_min);
@@ -118,7 +122,8 @@ export class SignalService {
         }
 
         return {
-            symbol: signal.symbol,
+            id: signal.id,
+            symbol: isGuest ? "***" : signal.symbol,
             exchange: signal.exchange,
             price_base: signal.price_base,
             current_price: marketPrice,

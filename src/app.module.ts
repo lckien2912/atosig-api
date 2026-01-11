@@ -7,6 +7,10 @@ import { SignalModule } from "./signal/signal.module";
 import { DataImportModule } from "./data-import/data-import.module";
 import { CrawlerModule } from "./crawler/crawler.module";
 
+import { AuthModule } from "./auth/auth.module";
+import { UsersModule } from "./users/user.module";
+import { DataSource } from "typeorm";
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -14,23 +18,28 @@ import { CrawlerModule } from "./crawler/crawler.module";
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        type: "postgres",
-        host: configService.get<string>("DB_HOST"),
-        port: configService.get<number>("DB_PORT"),
-        username: configService.get<string>("DB_USERNAME"),
-        password: configService.get<string>("DB_PASSWORD"),
-        database: configService.get<string>("DB_DATABASE"),
-        entities: [__dirname + "/**/*.entity{.ts,.js}"],
-        synchronize: false,
-      }),
       inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        type: "postgres",
+        host: config.get<string>("DB_HOST"),
+        port: config.get<number>("DB_PORT"),
+        username: config.get<string>("DB_USERNAME"),
+        password: config.get<string>("DB_PASSWORD"),
+        database: config.get<string>("DB_DATABASE"),
+        autoLoadEntities: true,
+        synchronize: false,
+        logging: true,
+      }),
     }),
     SignalModule,
-    DataImportModule,
     CrawlerModule,
+    DataImportModule,
+    AuthModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule { }
+export class AppModule {
+  constructor(private dataSource: DataSource) { }
+}

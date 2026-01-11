@@ -2,6 +2,9 @@ import { ApiProperty } from "@nestjs/swagger";
 import { SignalDisplayStatus } from "../enums/signal-status.enum";
 
 export class SignalResponseDto {
+  @ApiProperty({ example: "09b8d1ee-21ca-4221-b924-9eb47a7cafb1" })
+  id: string;
+
   @ApiProperty({ example: "ACB" })
   symbol: string;
 
