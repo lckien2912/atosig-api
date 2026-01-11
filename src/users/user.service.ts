@@ -50,7 +50,7 @@ export class UsersService {
      * Get List User
      * @returns User[]
      */
-    async findAll(query: PaginationDto & { search?: string }) {
+    async findAll(query: PaginationDto) {
         const { page = 1, limit = 10, search } = query;
         const skip = (page - 1) * limit;
 
@@ -58,7 +58,7 @@ export class UsersService {
 
         if (search) {
             queryBuilder.where(
-                "(user.full_name ILIKE :search OR user.email ILIKE :search)",
+                "(user.full_name ILIKE :search OR user.email ILIKE :search OR user.phone_number ILIKE :search)",
                 { search: `%${search}%` }
             );
         }
