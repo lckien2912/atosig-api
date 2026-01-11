@@ -11,6 +11,7 @@ import { AuthModule } from "./auth/auth.module";
 import { UsersModule } from "./users/user.module";
 import { DataSource } from "typeorm";
 import { PricingModule } from "./pricing/pricing.module";
+import { PaymentModule } from "./payment/payment.module";
 
 @Module({
   imports: [
@@ -37,7 +38,8 @@ import { PricingModule } from "./pricing/pricing.module";
     DataImportModule,
     AuthModule,
     UsersModule,
-    PricingModule
+    PricingModule,
+    PaymentModule
   ],
   controllers: [AppController],
   providers: [AppService],
