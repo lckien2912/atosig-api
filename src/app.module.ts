@@ -10,6 +10,7 @@ import { CrawlerModule } from "./crawler/crawler.module";
 import { AuthModule } from "./auth/auth.module";
 import { UsersModule } from "./users/user.module";
 import { DataSource } from "typeorm";
+import { PricingModule } from "./pricing/pricing.module";
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { DataSource } from "typeorm";
     DataImportModule,
     AuthModule,
     UsersModule,
+    PricingModule
   ],
   controllers: [AppController],
   providers: [AppService],
