@@ -35,8 +35,7 @@ export class AuthService {
 
         await this.userRepository.save(newUser);
 
-        const { password, ...result } = newUser;
-        return result;
+        return this.generateTokens(newUser);
     }
 
     async login(loginDto: LoginDto) {
@@ -71,7 +70,7 @@ export class AuthService {
         return this.generateTokens(user);
     }
 
-    async generateTokens(user: User) {
+    generateTokens(user: User) {
         const payload = {
             sub: user.id,
             email: user.email,
