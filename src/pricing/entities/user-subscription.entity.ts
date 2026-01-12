@@ -1,7 +1,9 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn, OneToMany, BeforeInsert, UpdateDateColumn } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { SubscriptionPlan } from './subscription-plan.entity';
 import { SubscriptionStatus } from '../enums/pricing.enum';
+import { PaymentTransaction } from 'src/payment/entities/payment-transaction.entity';
+import { v4 as uuidv4 } from 'uuid';
 
 
 @Entity('user_subscriptions')
@@ -10,7 +12,7 @@ export class UserSubscription {
     id: string;
 
     // Quan hệ với User
-    @Column({ type: 'varchar' })
+    @Column({ type: 'uuid' })
     user_id: string;
 
     @ManyToOne(() => User)
@@ -18,7 +20,7 @@ export class UserSubscription {
     user: User;
 
     // Quan hệ với Plan (Snapshot thông tin gói tại thời điểm mua)
-    @Column({ type: 'varchar', nullable: true })
+    @Column({ type: 'uuid', nullable: true })
     plan_id: string;
 
     @ManyToOne(() => SubscriptionPlan)
@@ -43,6 +45,19 @@ export class UserSubscription {
     @Column({ type: 'varchar', nullable: true })
     transaction_code: string; // Mã giao dịch từ cổng thanh toán
 
+    @OneToMany(() => PaymentTransaction, (txn) => txn.subscription)
+    transactions: PaymentTransaction[];
+
     @CreateDateColumn()
     created_at: Date;
+
+    @UpdateDateColumn()
+    updated_at: Date;
+
+    @BeforeInsert()
+    generateId() {
+        if (!this.id) {
+            this.id = uuidv4();
+        }
+    }
 }

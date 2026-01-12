@@ -9,17 +9,18 @@ export class CreatePlanDto {
 
     @ApiProperty({ example: 'Truy cập full tín hiệu VIP' })
     @IsString()
-    description: string;
+    @IsOptional()
+    description?: string;
 
     @ApiProperty({ example: 4990000 })
     @IsNumber()
     @Min(0)
-    price: number;
+    price: number; // Giá bán thực tế (VD: 1990000)
 
-    @ApiProperty({ example: 6000000, required: false })
+    @ApiProperty({ example: 30, required: false })
     @IsOptional()
     @IsNumber()
-    original_price?: number;
+    discount_percentage?: number;
 
     @ApiProperty({ example: 90, description: 'Số ngày hiệu lực' })
     @IsNumber()
@@ -33,10 +34,16 @@ export class CreatePlanDto {
     @ApiProperty({ example: ['Tín hiệu Realtime', 'Hỗ trợ 1-1', 'Báo cáo tuần'] })
     @IsArray()
     @IsString({ each: true })
-    features: string[];
+    @IsOptional()
+    features?: string[];
 
     @ApiProperty({ example: true, required: false })
     @IsOptional()
     @IsBoolean()
     is_featured?: boolean;
+
+    @ApiProperty({ example: true, required: false, description: 'Trạng thái hoạt động' })
+    @IsOptional()
+    @IsBoolean()
+    is_active?: boolean;
 }

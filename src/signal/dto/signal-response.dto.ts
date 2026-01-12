@@ -5,20 +5,20 @@ export class SignalResponseDto {
   @ApiProperty({ example: "09b8d1ee-21ca-4221-b924-9eb47a7cafb1" })
   id: string;
 
-  @ApiProperty({ example: "ACB" })
-  symbol: string;
+  @ApiProperty({ example: "ACB", nullable: true })
+  symbol: string | null;
 
   @ApiProperty({ example: "HNX" })
   exchange: string;
 
-  @ApiProperty({ example: 38.42 })
-  price_base: number;
+  @ApiProperty({ example: 38.42, nullable: true })
+  price_base: number | null;
 
-  @ApiProperty({ example: 38.42 })
-  current_price: number;
+  @ApiProperty({ example: 38.42, nullable: true })
+  current_price: number | null;
 
-  @ApiProperty({ example: 2.0 })
-  current_change_percent: number;
+  @ApiProperty({ example: 2.0, nullable: true })
+  current_change_percent: number | null;
 
   @ApiProperty({ example: "05/11/2025" })
   signal_date: Date;
@@ -38,32 +38,32 @@ export class SignalResponseDto {
   @ApiProperty({ example: 18.8 })
   actual_efficiency: number;
 
-  @ApiProperty({ example: "38.50" })
-  entry_price: string;
+  @ApiProperty({ example: "38.50", nullable: true })
+  entry_price: string | null;
 
-  @ApiProperty({ example: "38.50" })
-  entry_price_min: string;
+  @ApiProperty({ example: "38.50", nullable: true })
+  entry_price_min: string | null;
 
-  @ApiProperty({ example: "39.00" })
-  entry_price_max: string;
+  @ApiProperty({ example: "39.00", nullable: true })
+  entry_price_max: string | null;
 
-  @ApiProperty({ example: "38.50 - 39.00" })
-  entry_zone: string;
+  @ApiProperty({ example: "38.50 - 39.00", nullable: true })
+  entry_zone: string | null;
 
-  @ApiProperty({ example: 38.5 })
-  tp1: number;
+  @ApiProperty({ example: 38.5, nullable: true })
+  tp1: number | null;
 
-  @ApiProperty({ example: 38.5 })
-  tp2: number;
+  @ApiProperty({ example: 38.5, nullable: true })
+  tp2: number | null;
 
-  @ApiProperty({ example: 38.5 })
-  tp3: number;
+  @ApiProperty({ example: 38.5, nullable: true })
+  tp3: number | null;
 
-  @ApiProperty({ example: 38.5 })
-  stop_loss_price: number;
+  @ApiProperty({ example: 38.5, nullable: true })
+  stop_loss_price: number | null;
 
-  @ApiProperty({ example: "2 tuần" })
-  holding_time: string;
+  @ApiProperty({ example: "2 tuần", nullable: true })
+  holding_time: string | null;
 
   @ApiProperty({ example: "false" })
   is_expired: boolean; // false = chưa hết hạn, true = hết hạn

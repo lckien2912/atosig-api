@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm'; // Dùng DataSource để quản lý Transaction
+import { Repository, DataSource, MoreThan } from 'typeorm'; // Dùng DataSource để quản lý Transaction
 import { SubscriptionPlan } from './entities/subscription-plan.entity';
 import { UserSubscription } from './entities/user-subscription.entity';
 import { CreatePlanDto } from './dto/create-plan.dto';
+import { UpdatePlanDto } from './dto/update-plan.dto';
 import { User } from '../users/entities/user.entity';
-import moment from 'moment';
+import moment, { now } from 'moment';
 import { SubscriptionStatus } from './enums/pricing.enum';
 
 @Injectable()
@@ -43,6 +44,27 @@ export class PricingService {
         return this.planRepository.save(plan);
     }
 
+    async updatePlan(id: string, dto: UpdatePlanDto) {
+        const plan = await this.planRepository.findOne({ where: { id } });
+        if (!plan) throw new NotFoundException('Plan not found');
+
+        const updatedPlan = this.planRepository.merge(plan, dto);
+        return this.planRepository.save(updatedPlan);
+    }
+
+    async findOnePlan(id: string) {
+        const plan = await this.planRepository.findOne({ where: { id } });
+        if (!plan) throw new NotFoundException('Plan not found');
+        return plan;
+    }
+
+    async deletePlan(id: string) {
+        const plan = await this.planRepository.findOne({ where: { id } });
+        if (!plan) throw new NotFoundException('Plan not found');
+        await this.planRepository.remove(plan);
+        return { message: 'Deleted successfully' };
+    }
+
     // ================================
     // USER: MUA GÓI 
     // ================================
@@ -61,15 +83,32 @@ export class PricingService {
 
         try {
             const now = new Date();
-            const endDate = moment().add(plan.duration_days, 'days').toDate();
+            let startDate = now;
+            let endDate = moment().add(plan.duration_days, 'days').toDate();
+
+            // check pricing ACTIVE by user
+            const currentSub = await this.subscriptionRepository.findOne({
+                where: {
+                    user_id: userId,
+                    status: SubscriptionStatus.ACTIVE,
+                    end_date: MoreThan(now)
+                },
+                order: { end_date: 'DESC' }
+            });
+
+            // Nếu User đang có gói còn hạn, gói mới sẽ bắt đầu ngay sau khi gói cũ kết thúc.
+            if (currentSub) {
+                startDate = currentSub.end_date;
+                endDate = moment(startDate).add(plan.duration_days, 'days').toDate();
+            }
 
             const newSub = this.subscriptionRepository.create({
                 user_id: userId,
                 plan_id: plan.id,
                 amount_paid: plan.price,
-                start_date: now,
+                start_date: startDate,
                 end_date: endDate,
-                status: SubscriptionStatus.ACTIVE, // Tạm thời để ACTIVE luôn (coi như đã thanh toán xong)
+                status: SubscriptionStatus.PENDING, // Tạm thời để PENDING, sau khi thanh toán xong chuyển trạng tháng sang ACTIVE
                 payment_method: 'MOCK_PAYMENT',
                 transaction_code: `TXN_${Date.now()}`
             });
@@ -86,7 +125,9 @@ export class PricingService {
             return {
                 message: 'Register subscription successfully',
                 subscription: newSub,
-                plan_name: plan.name
+                plan_name: plan.name,
+                valid_from: startDate,
+                valid_until: endDate
             };
 
         } catch (err) {
@@ -95,6 +136,62 @@ export class PricingService {
         } finally {
             await queryRunner.release();
         }
+    }
+
+    /**
+     * Get current subscription 
+     */
+    async getCurrentSubscription(userId: string) {
+        const now = new Date();
+
+        const activeSub = await this.subscriptionRepository.findOne({
+            where: {
+                user_id: userId,
+                status: SubscriptionStatus.ACTIVE,
+                end_date: MoreThan(now)
+            },
+            relations: ['plan'],
+            order: { end_date: 'DESC' }
+        });
+
+        if (!activeSub) return null;
+
+        const daysLeft = moment(activeSub.end_date).diff(moment(now), 'days');
+
+        return {
+            ...activeSub,
+            days_left: daysLeft,
+            is_expired: false,
+            plan_name: activeSub.plan.name
+        }
+    }
+
+    /**
+     * Huỷ gia hạn gói dịch vụ
+     */
+    async cancelRenewal(userId: string) {
+        const currentSub = await this.subscriptionRepository.findOne({
+            where: {
+                user_id: userId,
+                status: SubscriptionStatus.ACTIVE,
+                end_date: MoreThan(new Date())
+            },
+            order: { end_date: 'DESC' }
+        });
+
+        if (!currentSub) throw new BadRequestException('Bạn không có gói dịch vụ nào đang hoạt động để huỷ');
+
+        if (currentSub.status === SubscriptionStatus.CANCELLED) throw new BadRequestException('Gói dịch vụ này đã được huỷ gia hạn trước đó');
+
+        currentSub.status = SubscriptionStatus.CANCELLED;
+        currentSub.updated_at = new Date();
+        await this.subscriptionRepository.save(currentSub);
+
+        return {
+            message: 'Đã huỷ gia hạn thành công.',
+            end_date: currentSub.end_date,
+            cancellation_date: currentSub.updated_at
+        };
     }
 
     /**

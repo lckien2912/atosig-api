@@ -5,6 +5,7 @@ import { Signal } from "../signal/entities/signal.entity";
 import { SignalStatus } from "../signal/enums/signal-status.enum";
 import csv from "csv-parser";
 import { Readable } from "stream";
+import moment from "moment";
 
 interface CsvRow {
     ticker?: string;
@@ -85,6 +86,11 @@ export class DataImportService {
         signal.price_base = this.parseNumber(row.p_base);
 
         signal.signal_date = this.parseDate(row.signal_date);
+
+        if (signal.signal_date) {
+            signal.holding_period = moment(signal.signal_date).add(10, 'days').toDate();
+        }
+
         signal.entry_date = this.parseDate(row.entry_date);
         signal.created_at = signal.signal_date || new Date();
 

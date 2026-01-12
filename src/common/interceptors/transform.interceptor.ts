@@ -17,11 +17,18 @@ export class TransformInterceptor<T> implements NestInterceptor<T, any> {
           return data;
         }
 
-        return {
+        const response: any = {
           status: "success",
           status_code: context.switchToHttp().getResponse().statusCode,
-          data: data,
         };
+
+        if (data && typeof data === 'object' && 'message' in data && Object.keys(data).length === 1) {
+          response.message = data.message;
+        } else {
+          response.data = data;
+        }
+
+        return response;
       }),
     );
   }

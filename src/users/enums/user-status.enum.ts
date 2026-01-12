@@ -4,6 +4,13 @@ export enum UserSubscriptionTier {
     PREMIUM = 'PREMIUM',
 }
 
+export enum DuarationDays {
+    WEEK = 7,
+    ONE_MONTH = 30,
+    THREE_MONTH = 90,
+}
+
+
 // Enum cho định danh (KYC sau này)
 export enum KycStatus {
     UNVERIFIED = 'UNVERIFIED', // Chưa xác minh

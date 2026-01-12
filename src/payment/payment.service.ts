@@ -39,7 +39,7 @@ export class PaymentService {
 
         const transaction = this.paymentRepo.create({
             user_id: userId,
-            reference_id: sub.id,
+            subscription_id: sub.id,
             amount: sub.amount_paid,
             currency: dto.currency as PaymentCurrency || PaymentCurrency.VND,
             gateway: dto.gateway,
@@ -133,7 +133,7 @@ export class PaymentService {
 
             if (isSuccess) {
                 const sub = await this.subRepo.findOne({
-                    where: { id: transaction.reference_id },
+                    where: { id: transaction.subscription_id },
                     relations: ['plan']
                 });
 

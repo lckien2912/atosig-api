@@ -1,13 +1,15 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, BeforeInsert } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { PaymentGateway, PaymentStatus, PaymentCurrency } from '../enums/payment.enum';
+import { UserSubscription } from 'src/pricing/entities/user-subscription.entity';
+import { v4 as uuidv4 } from 'uuid';
 
 @Entity('payment_transactions')
 export class PaymentTransaction {
     @PrimaryGeneratedColumn('uuid')
     id: string;
 
-    @Column()
+    @Column({ type: 'uuid' })
     user_id: string;
 
     @ManyToOne(() => User)
@@ -15,8 +17,12 @@ export class PaymentTransaction {
     user: User;
 
     // ID của subscription (hoặc Order ID)
-    @Column({ type: 'varchar', length: 255, nullable: false })
-    reference_id: string;
+    @Column({ type: 'uuid' })
+    subscription_id: string;
+
+    @ManyToOne(() => UserSubscription, (sub) => sub.transactions)
+    @JoinColumn({ name: 'subscription_id' })
+    subscription: UserSubscription;
 
     @Column({ type: 'decimal', precision: 15, scale: 2 })
     amount: number;
@@ -50,4 +56,11 @@ export class PaymentTransaction {
 
     @UpdateDateColumn()
     updated_at: Date;
+
+    @BeforeInsert()
+    generateId() {
+        if (!this.id) {
+            this.id = uuidv4();
+        }
+    }
 }
