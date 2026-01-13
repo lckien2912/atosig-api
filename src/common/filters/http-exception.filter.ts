@@ -41,11 +41,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
         console.error('Exception caught:', exception);
 
         response.status(status).json({
-            status: "error",
+            status: 'error',
             status_code: status,
             message: message,
-            timestamp: new Date().toISOString(),
-            path: request.url,
+            data: null,
+            success: false,
         });
     }
 }
