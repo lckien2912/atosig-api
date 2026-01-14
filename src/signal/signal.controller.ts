@@ -33,7 +33,7 @@ export class SignalController {
         @Query("page") page: number = 1,
         @Query("limit") limit: number = 10,
     ) {
-        return this.signalService.getWatchlist(req.user.id, page, limit);
+        return this.signalService.getWatchlist(req.user, page, limit);
     }
 
     @Get(":id")
