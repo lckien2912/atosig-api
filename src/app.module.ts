@@ -12,6 +12,7 @@ import { UsersModule } from "./users/user.module";
 import { DataSource } from "typeorm";
 import { PricingModule } from "./pricing/pricing.module";
 import { PaymentModule } from "./payment/payment.module";
+import { NotificationsModule } from "./notification/notifications.module";
 
 @Module({
   imports: [
@@ -39,7 +40,8 @@ import { PaymentModule } from "./payment/payment.module";
     AuthModule,
     UsersModule,
     PricingModule,
-    PaymentModule
+    PaymentModule,
+    NotificationsModule
   ],
   controllers: [AppController],
   providers: [AppService],

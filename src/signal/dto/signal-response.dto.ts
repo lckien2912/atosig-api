@@ -67,4 +67,7 @@ export class SignalResponseDto {
 
   @ApiProperty({ example: "false" })
   is_expired: boolean; // false = chưa hết hạn, true = hết hạn
+
+  @ApiProperty({ example: "false" })
+  is_favorited: boolean;
 }

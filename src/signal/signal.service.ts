@@ -5,15 +5,17 @@ import { Signal } from "./entities/signal.entity";
 import { SignalResponseDto } from "./dto/signal-response.dto";
 import { SignalDisplayStatus, SignalStatus } from "./enums/signal-status.enum";
 import moment from "moment";
+import { UserFavorite } from "./entities/user-favorite.entity";
 
 @Injectable()
 export class SignalService {
     constructor(
         @InjectRepository(Signal) private signalsRepository: Repository<Signal>,
+        @InjectRepository(UserFavorite) private favoriteRepository: Repository<UserFavorite>,
     ) { }
 
     async findAll(query: { page: number; limit: number; duration?: string, currentUser?: any }) {
-        const { page, limit, duration } = query;
+        const { page, limit, duration, currentUser } = query;
         const skip = (page - 1) * limit;
 
         const where: any = {};
@@ -34,8 +36,17 @@ export class SignalService {
             take: limit,
         });
 
+        let favoritedSignalIds = new Set<string>();
+        if (currentUser) {
+            const favorites = await this.favoriteRepository.find({
+                where: { user_id: currentUser.id },
+                select: ['signal_id']
+            });
+            favorites.forEach(f => favoritedSignalIds.add(f.signal_id));
+        }
+
         return {
-            data: signals.map((signal) => this.mapToResponse(signal, query.currentUser)),
+            data: signals.map((signal) => this.mapToResponse(signal, currentUser, favoritedSignalIds.has(signal.id))),
             meta: {
                 total,
                 page: Number(page),
@@ -52,12 +63,21 @@ export class SignalService {
         if (!signal) {
             throw new NotFoundException(`Signal with ID ${id} not found`)
         };
+
+        let isFavorited = false;
+        if (currentUser) {
+            const fav = await this.favoriteRepository.findOne({
+                where: { user_id: currentUser.id, signal_id: id }
+            });
+            isFavorited = !!fav;
+        }
+
         return {
-            data: this.mapToResponse(signal, currentUser)
+            data: this.mapToResponse(signal, currentUser, isFavorited)
         };
     }
 
-    private mapToResponse(signal: Signal, currentUser?: any): SignalResponseDto {
+    private mapToResponse(signal: Signal, currentUser?: any, isFavorited: boolean = false): SignalResponseDto {
 
         const isGuest = !currentUser;
 
@@ -143,6 +163,59 @@ export class SignalService {
             stop_loss_price: isGuest ? null : sl,
             is_expired: signal.is_expired,
             holding_time: isGuest ? null : holdingTimeText,
+            is_favorited: isFavorited
+        };
+    }
+
+    async toggleFavorite(signalId: string, userId: string) {
+        const signal = await this.signalsRepository.findOne({
+            where: { id: signalId }
+        });
+        if (!signal) throw new NotFoundException('Signal not found');
+
+        const existing = await this.favoriteRepository.findOne({
+            where: { user_id: userId, signal_id: signalId }
+        });
+
+        if (existing) {
+            await this.favoriteRepository.remove(existing);
+            return { message: 'Removed from watchlist', is_favorited: false };
+        } else {
+            const newFav = this.favoriteRepository.create({
+                user_id: userId,
+                signal_id: signalId
+            });
+            await this.favoriteRepository.save(newFav);
+            return { message: 'Added to watchlist', is_favorited: true };
+        }
+    }
+
+    async getWatchlist(userId: string, page: number = 1, limit: number = 10) {
+        console.log(userId);
+        const skip = (page - 1) * limit;
+
+        const [favorites, total] = await this.favoriteRepository.findAndCount({
+            where: { user_id: userId },
+            relations: ['signal'],
+            order: { created_at: 'DESC' },
+            skip,
+            take: limit
+        });
+
+        const signals = favorites
+            .filter(fav => fav.signal != null)
+            .map(fav => fav.signal);
+
+        const data = signals.map(signal => this.mapToResponse(signal, { id: userId }, true));
+
+        return {
+            data,
+            meta: {
+                total,
+                page: Number(page),
+                limit: Number(limit),
+                totalPages: Math.ceil(total / limit),
+            }
         };
     }
 
