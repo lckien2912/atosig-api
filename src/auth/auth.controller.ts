@@ -5,6 +5,8 @@ import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
 import { TransformInterceptor } from "../common/interceptors/transform.interceptor";
 import { AuthGuard } from "@nestjs/passport";
+import { ForgotPasswordDto } from "./dto/forgot-password.dto";
+import { ResetPasswordDto } from "./dto/reset-password.dto";
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -77,6 +79,18 @@ export class AuthController {
         // const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
         // return res.redirect(`${frontendUrl}/auth/success?token=${data.access_token}&email=${data.user.email}`);
+    }
+
+    @Post('forgot-password')
+    @ApiOperation({ summary: 'Quên mật khẩu -> Gửi OTP' })
+    async forgotPassword(@Body() dto: ForgotPasswordDto) {
+        return this.authService.forgotPassword(dto);
+    }
+
+    @Post('reset-password')
+    @ApiOperation({ summary: 'Đặt lại mật khẩu (Dùng OTP)' })
+    async resetPassword(@Body() dto: ResetPasswordDto) {
+        return this.authService.resetPassword(dto);
     }
 
 

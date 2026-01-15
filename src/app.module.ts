@@ -14,9 +14,16 @@ import { PricingModule } from "./pricing/pricing.module";
 import { PaymentModule } from "./payment/payment.module";
 import { NotificationsModule } from "./notification/notifications.module";
 import { MailModule } from "./mail/mail.module";
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from "path";
+import { ProfileModule } from "./profile/profile.module";
 
 @Module({
   imports: [
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', 'uploads'),
+      serveRoot: '/uploads',
+    }),
     ConfigModule.forRoot({
       isGlobal: true,
     }),
@@ -44,6 +51,7 @@ import { MailModule } from "./mail/mail.module";
     NotificationsModule,
     MailModule,
     AuthModule,
+    ProfileModule
   ],
   controllers: [AppController],
   providers: [AppService],

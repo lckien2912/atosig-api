@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
@@ -12,6 +12,8 @@ import { userInfo } from "os";
 import moment from "moment";
 import { VerificationCode } from "./entities/verification-code.entity";
 import { MailerService } from "@nestjs-modules/mailer";
+import { ForgotPasswordDto } from "./dto/forgot-password.dto";
+import { ResetPasswordDto } from "./dto/reset-password.dto";
 
 @Injectable()
 export class AuthService {
@@ -230,5 +232,67 @@ export class AuthService {
         }
     }
 
+    async forgotPassword(dto: ForgotPasswordDto) {
+        const user = await this.userRepo.findOne({ where: { email: dto.email } });
+        if (!user) throw new BadRequestException('Email không hợp lệ');
+
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiresAt = moment().add(5, 'minutes').toDate();
+
+        await this.verifyRepo.delete({ email: dto.email });
+
+        const verifyRecord = this.verifyRepo.create({
+            email: dto.email,
+            code,
+            expires_at: expiresAt
+        });
+        await this.verifyRepo.save(verifyRecord);
+
+        try {
+            await this.mailerService.sendMail({
+                to: dto.email,
+                subject: '[ATOSIG] Khôi phục mật khẩu',
+                template: 'verify',
+                context: {
+                    code: code,
+                    email: dto.email,
+                    description: 'Bạn đang yêu cầu đặt lại mật khẩu. Mã xác thực của bạn là:'
+                },
+            });
+            return { message: `Mã xác thực đã được gửi tới ${dto.email}` };
+        } catch (error) {
+            console.log(error);
+            throw new BadRequestException('Lỗi gửi email. Vui lòng thử lại sau.');
+        }
+    }
+
+    async resetPassword(dto: ResetPasswordDto) {
+        if (dto.newPassword !== dto.confirmPassword) {
+            throw new BadRequestException('Mật khẩu xác nhận không khớp');
+        }
+
+        const record = await this.verifyRepo.findOne({
+            where: { email: dto.email, code: dto.code }
+        });
+
+        if (!record) throw new BadRequestException('Mã xác thực không đúng hoặc email sai');
+        if (new Date() > record.expires_at) {
+            await this.verifyRepo.delete({ id: record.id });
+            throw new BadRequestException('Mã xác thực đã hết hạn');
+        }
+
+        const user = await this.userRepo.findOne({ where: { email: dto.email } });
+        if (!user) throw new NotFoundException('User not found');
+
+        const salt = await bcrypt.genSalt();
+        const hashedPassword = await bcrypt.hash(dto.newPassword, salt);
+
+        user.password = hashedPassword;
+        await this.userRepo.save(user);
+
+        await this.verifyRepo.delete({ id: record.id });
+
+        return { success: true, message: 'Đặt lại mật khẩu thành công' };
+    }
 
 }
