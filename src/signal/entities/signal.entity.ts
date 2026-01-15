@@ -127,6 +127,21 @@ export class Signal {
     @Column({ default: false })
     is_expired: boolean;
 
+    @Column({ type: "timestamp", nullable: true })
+    tp1_hit_at: Date;
+
+    @Column({ type: "timestamp", nullable: true })
+    tp2_hit_at: Date;
+
+    @Column({ type: "timestamp", nullable: true })
+    tp3_hit_at: Date;
+
+    @Column({ type: "timestamp", nullable: true })
+    sl_hit_at: Date;
+
+    @Column({ type: "timestamp", nullable: true })
+    closed_at: Date;
+
     @UpdateDateColumn()
     updated_at: Date;
 

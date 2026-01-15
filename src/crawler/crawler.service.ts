@@ -8,6 +8,8 @@ import { lastValueFrom } from "rxjs";
 import { Signal } from "../signal/entities/signal.entity";
 import { SignalStatus } from "../signal/enums/signal-status.enum";
 import moment from "moment";
+import { NotificationsService } from "src/notification/notifications.service";
+import { NotificationType } from "src/notification/enums/notification.enum";
 
 @Injectable()
 export class CrawlerService {
@@ -24,6 +26,7 @@ export class CrawlerService {
         @InjectRepository(Signal)
         private readonly signalRepository: Repository<Signal>,
         private readonly httpService: HttpService,
+        private readonly notiService: NotificationsService,
         private readonly configService: ConfigService
     ) {
         this.ssiConfig = {
@@ -199,30 +202,103 @@ export class CrawlerService {
 
                 if (currentPrice && !isNaN(currentPrice)) {
 
-                    const updateData: any = {
-                        current_price: currentPrice,
-                        updated_at: new Date()
-                    };
+                    const activeSignals = await this.signalRepository.find({
+                        where: {
+                            symbol: symbol,
+                            status: In([SignalStatus.ACTIVE, SignalStatus.PENDING])
+                        }
+                    });
 
-                    if (!isNaN(changePercent)) {
-                        updateData.current_change_percent = changePercent;
+                    for (const signal of activeSignals) {
+
+                        const updateData: any = {
+                            current_price: currentPrice,
+                            updated_at: new Date()
+                        };
+
+                        if (!isNaN(changePercent)) {
+                            updateData.current_change_percent = changePercent;
+                        }
+
+                        if (signal.status === SignalStatus.PENDING) {
+                            updateData.status = SignalStatus.ACTIVE;
+                        }
+
+                        if (currentPrice >= Number(signal.tp1_price) && !signal.tp1_hit_at) {
+                            updateData.tp1_hit_at = new Date();
+                            this.logger.log(`🚀 ${symbol} HIT TP1 at ${currentPrice}`);
+
+                            // call noti
+                            await this.notiService.createSignalNotification({
+                                symbol: symbol,
+                                exchange: signal.exchange,
+                                type: NotificationType.SIGNAL_TP_1,
+                                price: currentPrice,
+                                change_percent: changePercent,
+                                signal_id: signal.id
+                            })
+                        }
+
+                        if (currentPrice >= Number(signal.tp2_price) && !signal.tp2_hit_at) {
+                            updateData.tp2_hit_at = new Date();
+                            this.logger.log(`🚀 ${symbol} HIT TP2 at ${currentPrice}`);
+
+                            // call noti
+                            await this.notiService.createSignalNotification({
+                                symbol: symbol,
+                                exchange: signal.exchange,
+                                type: NotificationType.SIGNAL_TP_2,
+                                price: currentPrice,
+                                change_percent: changePercent,
+                                signal_id: signal.id
+                            })
+                        }
+
+                        if (currentPrice >= Number(signal.tp3_price) && !signal.tp3_hit_at) {
+                            updateData.tp3_hit_at = new Date();
+                            this.logger.log(`🚀 ${symbol} HIT TP3 at ${currentPrice}`);
+
+                            // call noti
+                            await this.notiService.createSignalNotification({
+                                symbol: symbol,
+                                exchange: signal.exchange,
+                                type: NotificationType.SIGNAL_TP_3,
+                                price: currentPrice,
+                                change_percent: changePercent,
+                                signal_id: signal.id
+                            })
+                        }
+
+                        if (currentPrice <= Number(signal.stop_loss_price) && !signal.sl_hit_at) {
+                            updateData.sl_hit_at = new Date();
+                            updateData.status = SignalStatus.CLOSED;
+                            this.logger.log(`🔻 ${symbol} HIT SL at ${currentPrice}`);
+
+                            // call noti
+                            await this.notiService.createSignalNotification({
+                                symbol: symbol,
+                                exchange: signal.exchange,
+                                type: NotificationType.SIGNAL_SL,
+                                price: currentPrice,
+                                change_percent: changePercent,
+                                signal_id: signal.id
+                            })
+                        }
+
+                        const updateResult = await this.signalRepository.update({
+                            id: signal.id,
+                            symbol: symbol,
+                            status: In([SignalStatus.ACTIVE, SignalStatus.PENDING])
+                        }, updateData);
+
+                        if (updateResult.affected !== undefined && updateResult.affected > 0) {
+                            this.logger.log(`✅ SUCCESS: Updated ${symbol} to price ${currentPrice}`);
+                        } else {
+                            this.logger.warn(`⚠️ SKIPPED: ${symbol} fetched ${currentPrice} but no ACTIVE/PENDING signal found to update.`);
+                        }
+
                     }
 
-                    const updateResult = await this.signalRepository
-                        .createQueryBuilder()
-                        .update(Signal)
-                        .set(updateData)
-                        .where("symbol = :symbol", { symbol })
-                        .andWhere("status IN (:...statuses)", {
-                            statuses: [SignalStatus.ACTIVE, SignalStatus.PENDING]
-                        })
-                        .execute();
-
-                    if (updateResult.affected !== undefined && updateResult.affected > 0) {
-                        this.logger.log(`✅ SUCCESS: Updated ${symbol} to price ${currentPrice}`);
-                    } else {
-                        this.logger.warn(`⚠️ SKIPPED: ${symbol} fetched ${currentPrice} but no ACTIVE/PENDING signal found to update.`);
-                    }
                     return true;
                 } else {
                     this.logger.warn(`❌ [${symbol}] Price is invalid or missing keys. Data keys: ${Object.keys(latestData).join(', ')}`);
@@ -236,6 +312,63 @@ export class CrawlerService {
             this.logger.error(`Failed to update price for ${symbol}`, error.message);
             return false;
         }
+    }
+
+    //test
+    async testManualTrigger(symbol: string, mockPrice: number) {
+        this.logger.log(`🧪 TEST TRIGGER: ${symbol} với giá giả lập ${mockPrice}`);
+        const now = new Date();
+
+        // 1. Tìm các signal Active/Pending của mã này
+        const activeSignals = await this.signalRepository.find({
+            where: {
+                symbol: symbol,
+                status: In([SignalStatus.ACTIVE, SignalStatus.PENDING])
+            }
+        });
+
+        if (activeSignals.length === 0) return { message: 'Không có signal nào đang chạy cho mã này' };
+
+        // 2. Chạy vòng lặp check giá (Copy logic từ fetchAndUpdateOne)
+        for (const signal of activeSignals) {
+            const updateData: any = {
+                current_price: mockPrice,
+                updated_at: now
+            };
+
+            // Check TP1
+            if (mockPrice >= Number(signal.tp1_price) && !signal.tp1_hit_at) {
+                updateData.tp1_hit_at = now;
+                // GỌI NOTI
+                await this.notiService.createSignalNotification({
+                    symbol: symbol,
+                    exchange: signal.exchange,
+                    type: NotificationType.SIGNAL_TP_1,
+                    price: mockPrice,
+                    change_percent: 5.0, // Fake %
+                    signal_id: signal.id
+                });
+            }
+
+            // Check SL
+            if (mockPrice <= Number(signal.stop_loss_price) && !signal.sl_hit_at) {
+                updateData.sl_hit_at = now;
+                // GỌI NOTI
+                await this.notiService.createSignalNotification({
+                    symbol: symbol,
+                    exchange: signal.exchange,
+                    type: NotificationType.SIGNAL_SL,
+                    price: mockPrice,
+                    change_percent: -2.0, // Fake %
+                    signal_id: signal.id
+                });
+            }
+
+            // Save tạm để update hit_at (để không bị bắn noti 2 lần)
+            await this.signalRepository.update(signal.id, updateData);
+        }
+
+        return { success: true, count: activeSignals.length };
     }
 
 }

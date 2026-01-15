@@ -74,7 +74,7 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
 
     // Hàm gửi thông báo đến TẤT CẢ User (Dùng cho Tín hiệu Trading)
     broadcastToAll(data: any) {
-        this.server.to('global_signals').emit('new_notification', data);
+        this.server.to('global_notifications').emit('new_notification', data);
         this.logger.debug(`Broadcasted signal: ${data.title}`);
     }
 }

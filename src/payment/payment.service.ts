@@ -10,6 +10,8 @@ import { SubscriptionStatus } from '../pricing/enums/pricing.enum';
 import moment from 'moment';
 import * as crypto from 'crypto';
 import axios from 'axios';
+import { NotificationsService } from 'src/notification/notifications.service';
+import { NotificationType } from 'src/notification/enums/notification.enum';
 
 @Injectable()
 export class PaymentService {
@@ -21,6 +23,7 @@ export class PaymentService {
         @InjectRepository(UserSubscription)
         private subRepo: Repository<UserSubscription>,
         private configService: ConfigService,
+        private readonly notiService: NotificationsService,
         private dataSource: DataSource
     ) { }
 
@@ -258,6 +261,18 @@ export class PaymentService {
                     }
 
                     await queryRunner.manager.save(sub);
+
+                    // call noti
+                    await this.notiService.broadcastFromAdmin({
+                        title: 'Thanh toán thành công!',
+                        body: `Gói ${sub.plan?.name || 'VIP'} đã được kích hoạt. Hạn dùng đến ${moment(sub.end_date).format('DD/MM/YYYY')}.`,
+                        type: NotificationType.SYSTEM,
+                        user_id: transaction.user_id,
+                        metadata: {
+                            transaction_code: txnCode,
+                            amount: transaction.amount
+                        }
+                    });
                     this.logger.log(`User subscription ${sub.id} activated.`);
                 }
             }

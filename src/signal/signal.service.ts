@@ -112,19 +112,26 @@ export class SignalService {
         let statusCode = SignalDisplayStatus.BUY_ZONE;
         const now = new Date();
         const holdDate = signal.holding_period ? new Date(signal.holding_period) : null;
+        let closeTime: Date | null = null;
 
         if (marketPrice <= sl) {
             statusCode = SignalDisplayStatus.STOP_LOSS;
+            closeTime = signal.sl_hit_at || null;
         } else if (marketPrice >= tp3) {
             statusCode = SignalDisplayStatus.TAKE_PROFIT_3;
+            closeTime = signal.tp3_hit_at || null;
         } else if (marketPrice >= tp2) {
             statusCode = SignalDisplayStatus.TAKE_PROFIT_2;
+            closeTime = signal.tp2_hit_at || null;
         } else if (marketPrice >= tp1) {
             statusCode = SignalDisplayStatus.TAKE_PROFIT_1;
+            closeTime = signal.tp1_hit_at || null;
         } else if (holdDate && now > holdDate) {
             statusCode = SignalDisplayStatus.EXPIRED;
+            closeTime = holdDate;
         } else {
             statusCode = SignalDisplayStatus.BUY_ZONE;
+            closeTime = null;
         }
 
         // Handle holding time
@@ -165,7 +172,8 @@ export class SignalService {
             stop_loss_price: isLocked ? null : sl,
             is_expired: signal.is_expired,
             holding_time: isLocked ? null : holdingTimeText,
-            is_favorited: isFavorited
+            is_favorited: isFavorited,
+            close_time: closeTime
         };
     }
 

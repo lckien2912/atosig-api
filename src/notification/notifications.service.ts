@@ -23,7 +23,8 @@ export class NotificationsService {
         exchange: string;
         type: NotificationType;
         price: number;
-        change_percent: number;
+        change_percent?: number;
+        signal_id: string;
         signal_date?: Date;
     }) {
         let title = '';
@@ -35,13 +36,25 @@ export class NotificationsService {
                 title = `${data.symbol} (${data.exchange}) - Tín hiệu mới`;
                 body = `Entry point tại giá ${data.price}`;
                 break;
-            case NotificationType.SIGNAL_TP:
-                title = `${data.symbol} (${data.exchange}) - Đạt TP`;
+            case NotificationType.SIGNAL_TP_1:
+                title = `${data.symbol} (${data.exchange}) - Đạt TP1`;
+                body = `Chốt lời thành công tại ${data.price} (+${data.change_percent}%)`;
+                break;
+            case NotificationType.SIGNAL_TP_2:
+                title = `${data.symbol} (${data.exchange}) - Đạt TP2`;
+                body = `Chốt lời thành công tại ${data.price} (+${data.change_percent}%)`;
+                break;
+            case NotificationType.SIGNAL_TP_3:
+                title = `${data.symbol} (${data.exchange}) - Đạt TP3`;
                 body = `Chốt lời thành công tại ${data.price} (+${data.change_percent}%)`;
                 break;
             case NotificationType.SIGNAL_SL:
                 title = `${data.symbol} (${data.exchange}) - Chạm SL`;
                 body = `Cắt lỗ tại ${data.price} (${data.change_percent}%)`;
+                break;
+            case NotificationType.SIGNAL_ACTIVE:
+                title = `🚀 ${data.symbol} Đã kích hoạt (Active)`;
+                body = `Vùng mua hợp lệ tại giá: ${data.price}`;
                 break;
             default:
                 title = 'Thông báo hệ thống';
@@ -56,6 +69,7 @@ export class NotificationsService {
             body,
             is_read: false,
             metadata: {
+                signal_id: data.signal_id,
                 symbol: data.symbol,
                 exchange: data.exchange,
                 price: data.price,

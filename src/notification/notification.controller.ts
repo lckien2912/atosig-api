@@ -38,7 +38,7 @@ export class NotificationsController {
         return this.notiService.markAllRead(req.user.id);
     }
 
-    @Post('broadcast')
+    @Post('admin/send')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @ApiBearerAuth('access-token')
     @ApiOperation({ summary: '[ADMIN] Gửi thông báo thủ công (Bảo trì, Update...)' })
