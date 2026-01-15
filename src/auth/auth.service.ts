@@ -9,6 +9,9 @@ import * as bcrypt from 'bcrypt';
 import { LoginDto } from "./dto/login.dto";
 import { UserRole, UserSubscriptionTier, KycStatus } from "src/users/enums/user-status.enum";
 import { userInfo } from "os";
+import moment from "moment";
+import { VerificationCode } from "./entities/verification-code.entity";
+import { MailerService } from "@nestjs-modules/mailer";
 
 @Injectable()
 export class AuthService {
@@ -16,6 +19,9 @@ export class AuthService {
     constructor(
         @InjectRepository(User) private userRepository: Repository<User>,
         private jwtService: JwtService,
+        @InjectRepository(VerificationCode) private verifyRepo: Repository<VerificationCode>,
+        @InjectRepository(User) private userRepo: Repository<User>,
+        private readonly mailerService: MailerService,
         private configService: ConfigService
     ) { }
 
@@ -23,11 +29,14 @@ export class AuthService {
         const existing = await this.userRepository.findOne({ where: { email: registerDto.email } });
         if (existing) throw new BadRequestException('Email already exists');
 
+        if (registerDto.password !== registerDto.confirmPassword) throw new BadRequestException('Password and confirm password do not match');
+
         const hashedPassword = await bcrypt.hash(registerDto.password, 10);
 
         const newUser = this.userRepository.create({
             ...registerDto,
             password: hashedPassword,
+            full_name: registerDto.fullName ? registerDto.fullName : '',
             role: UserRole.USER,
             subscription_tier: UserSubscriptionTier.FREE,
             kyc_status: KycStatus.UNVERIFIED
@@ -74,7 +83,9 @@ export class AuthService {
         const payload = {
             sub: user.id,
             email: user.email,
-            role: user.role
+            role: user.role,
+            avatar: user.avatar,
+            is_verified: user.is_verified
         };
 
         const accessTime = this.configService.get<string>('JWT_ACCESS_EXPIRATION') || '1d';
@@ -92,4 +103,131 @@ export class AuthService {
             user: userInfo
         }
     }
+
+    // Verify email, send opt
+    async sendVerificationCode(email: string) {
+        const user = await this.userRepo.findOne({ where: { email } });
+        if (user && user.is_verified) {
+            throw new BadRequestException('Email này đã được xác thực');
+        }
+
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+        const expiresAt = moment().add(5, 'minutes').toDate();
+
+        await this.verifyRepo.delete({ email });
+
+        const verification = this.verifyRepo.create({
+            email,
+            code,
+            expires_at: expiresAt
+        });
+        await this.verifyRepo.save(verification);
+
+        try {
+            await this.mailerService.sendMail({
+                to: email,
+                subject: `Mã xác thực ATOSIG`,
+                template: 'verify',
+                context: {
+                    code: code,
+                    email: email
+                },
+            });
+            return { success: true, message: 'Mã xác thực đã được gửi tới email của bạn.' };
+        } catch (error) {
+            console.log(error);
+            throw new BadRequestException('Không thể gửi email. Vui lòng thử lại sau.');
+        }
+    }
+
+    // Check otp
+    async verifyCode(email: string, code: string) {
+        const record = await this.verifyRepo.findOne({
+            where: { email, code }
+        });
+
+        if (!record) throw new BadRequestException('Mã xác thực không hợp lệ hoặc email không hợp lệ');
+
+        if (new Date() > record.expires_at) {
+            await this.verifyRepo.delete({ id: record.id });
+            throw new BadRequestException('Mã xác thực đã hết hạn. Vui lòng lấy lại mã xác thực.');
+        }
+
+        const user = await this.userRepo.findOne({ where: { email } });
+        if (user) {
+            user.is_verified = true;
+            await this.userRepo.save(user);
+
+            await this.verifyRepo.delete({ id: record.id });
+
+            return {
+                success: true,
+                is_new_user: false,
+                message: 'Xác thực thành công',
+                user_updated: !!user
+            };
+        } else {
+            return {
+                success: true,
+                is_new_user: true,
+                message: 'Xác thực email thành công. Vui lòng tạo mật khẩu.',
+            };
+        }
+    }
+
+    async loginWithGoogle(googleUser: any) {
+        const { email, firstName, lastName, picture, googleId } = googleUser;
+
+        let user = await this.userRepo.findOne({ where: { email } });
+
+        if (user) {
+            if (!user.google_id || user.google_id == undefined || user.google_id == null) {
+                user.google_id = googleId;
+            }
+
+            if (!user.is_verified) {
+                user.is_verified = true;
+            }
+
+            if ((!user.avatar || user.avatar == undefined || user.avatar == null) && picture) {
+                user.avatar = picture;
+            }
+
+            await this.userRepo.save(user);
+
+        } else {
+            const randomPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8);
+            const hashedPassword = await bcrypt.hash(randomPassword, 10);
+
+            user = this.userRepo.create({
+                email,
+                full_name: `${firstName} ${lastName}`.trim(),
+                password: hashedPassword,
+                google_id: googleId,
+                avatar: picture,
+                role: UserRole.USER,
+                is_verified: true,
+                subscription_tier: UserSubscriptionTier.FREE,
+                kyc_status: KycStatus.UNVERIFIED
+            });
+
+            await this.userRepo.save(user);
+        }
+
+        const payload = {
+            sub: user.id,
+            email: user.email,
+            role: user.role,
+            avatar: user.avatar,
+            is_verified: user.is_verified
+        };
+
+        return {
+            access_token: this.jwtService.sign(payload, { expiresIn: '1d' }),
+            user
+        }
+    }
+
+
 }

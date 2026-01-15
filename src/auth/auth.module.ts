@@ -8,10 +8,14 @@ import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { JwtStrategy } from "./jwt.strategy";
 import { OptionalJwtAuthGuard } from "./guards/optional-jwt-auth.guard";
+import { MailModule } from "src/mail/mail.module";
+import { VerificationCode } from "./entities/verification-code.entity";
+import { GoogleStrategy } from "./strategies/google.strategy";
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([User]),
+        TypeOrmModule.forFeature([User, VerificationCode]),
+        MailModule,
         PassportModule,
         JwtModule.registerAsync({
             imports: [ConfigModule],
@@ -23,7 +27,7 @@ import { OptionalJwtAuthGuard } from "./guards/optional-jwt-auth.guard";
         }),
     ],
     controllers: [AuthController],
-    providers: [AuthService, JwtStrategy, OptionalJwtAuthGuard],
+    providers: [AuthService, JwtStrategy, OptionalJwtAuthGuard, GoogleStrategy],
     exports: [AuthService],
 })
 export class AuthModule { }

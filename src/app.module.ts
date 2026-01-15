@@ -13,6 +13,7 @@ import { DataSource } from "typeorm";
 import { PricingModule } from "./pricing/pricing.module";
 import { PaymentModule } from "./payment/payment.module";
 import { NotificationsModule } from "./notification/notifications.module";
+import { MailModule } from "./mail/mail.module";
 
 @Module({
   imports: [
@@ -37,11 +38,12 @@ import { NotificationsModule } from "./notification/notifications.module";
     SignalModule,
     CrawlerModule,
     DataImportModule,
-    AuthModule,
     UsersModule,
     PricingModule,
     PaymentModule,
-    NotificationsModule
+    NotificationsModule,
+    MailModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],

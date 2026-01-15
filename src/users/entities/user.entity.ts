@@ -7,7 +7,7 @@ export class User {
     @PrimaryGeneratedColumn('uuid')
     id: string;
 
-    @Column({ type: "varchar", nullable: false })
+    @Column({ type: "varchar" })
     full_name: string;
 
     @Column({ type: "varchar", nullable: false, unique: true })
@@ -45,6 +45,12 @@ export class User {
 
     @Column({ type: 'enum', enum: UserRole, default: UserRole.USER })
     role: UserRole;
+
+    @Column({ type: 'varchar', nullable: true })
+    google_id: string;
+
+    @Column({ type: 'varchar', nullable: true })
+    avatar: string;
 
     // @OneToMany(() => UserFavorite, (fav) => fav.user)
     // favorites: UserFavorite[];
