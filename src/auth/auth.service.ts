@@ -85,7 +85,8 @@ export class AuthService {
             email: user.email,
             role: user.role,
             avatar: user.avatar,
-            is_verified: user.is_verified
+            is_verified: user.is_verified,
+            subscription_tier: user.subscription_tier
         };
 
         const accessTime = this.configService.get<string>('JWT_ACCESS_EXPIRATION') || '1d';

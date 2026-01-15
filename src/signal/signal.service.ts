@@ -6,6 +6,8 @@ import { SignalResponseDto } from "./dto/signal-response.dto";
 import { SignalDisplayStatus, SignalStatus } from "./enums/signal-status.enum";
 import moment from "moment";
 import { UserFavorite } from "./entities/user-favorite.entity";
+import { User } from "src/users/entities/user.entity";
+import { UserSubscriptionTier } from "src/users/enums/user-status.enum";
 
 @Injectable()
 export class SignalService {
@@ -14,7 +16,7 @@ export class SignalService {
         @InjectRepository(UserFavorite) private favoriteRepository: Repository<UserFavorite>,
     ) { }
 
-    async findAll(query: { page: number; limit: number; duration?: string, currentUser?: any }) {
+    async findAll(query: { page: number; limit: number; duration?: string, currentUser?: User }) {
         const { page, limit, duration, currentUser } = query;
         const skip = (page - 1) * limit;
 
@@ -77,9 +79,9 @@ export class SignalService {
         };
     }
 
-    private mapToResponse(signal: Signal, currentUser?: any, isFavorited: boolean = false): SignalResponseDto {
-
-        const isGuest = !currentUser;
+    private mapToResponse(signal: Signal, currentUser?: User, isFavorited: boolean = false): SignalResponseDto {
+        const isPaidUser = currentUser && currentUser.subscription_tier !== UserSubscriptionTier.FREE;
+        const isLocked = !isPaidUser && signal.status !== SignalStatus.CLOSED;
 
         const entryMin = Number(signal.entry_price_min);
         const entryMax = Number(signal.entry_price_max || signal.entry_price_min);
@@ -143,26 +145,26 @@ export class SignalService {
 
         return {
             id: signal.id,
-            symbol: isGuest ? null : signal.symbol,
+            symbol: isLocked ? null : signal.symbol,
             exchange: signal.exchange,
-            price_base: isGuest ? null : signal.price_base,
-            current_price: isGuest ? null : marketPrice,
-            current_change_percent: isGuest ? null : signal.current_change_percent,
+            price_base: isLocked ? null : signal.price_base,
+            current_price: isLocked ? null : marketPrice,
+            current_change_percent: isLocked ? null : signal.current_change_percent,
             signal_date: startDate,
             status: signal.status,
             status_code: statusCode,
             expected_profit: Number(expectedProfit.toFixed(2)),
             actual_efficiency: Number(actualEfficiency.toFixed(2)),
-            entry_price: isGuest ? null : entryMin.toLocaleString(),
-            entry_price_min: isGuest ? null : entryMin.toLocaleString(),
-            entry_price_max: isGuest ? null : entryMax.toLocaleString(),
-            entry_zone: isGuest ? null : `${entryMin.toLocaleString()} - ${entryMax.toLocaleString()}`,
-            tp1: isGuest ? null : tp1,
-            tp2: isGuest ? null : tp2,
-            tp3: isGuest ? null : tp3,
-            stop_loss_price: isGuest ? null : sl,
+            entry_price: isLocked ? null : entryMin,
+            entry_price_min: isLocked ? null : entryMin,
+            entry_price_max: isLocked ? null : entryMax,
+            entry_zone: isLocked ? null : `${entryMin} - ${entryMax}`,
+            tp1: isLocked ? null : tp1,
+            tp2: isLocked ? null : tp2,
+            tp3: isLocked ? null : tp3,
+            stop_loss_price: isLocked ? null : sl,
             is_expired: signal.is_expired,
-            holding_time: isGuest ? null : holdingTimeText,
+            holding_time: isLocked ? null : holdingTimeText,
             is_favorited: isFavorited
         };
     }
@@ -190,12 +192,11 @@ export class SignalService {
         }
     }
 
-    async getWatchlist(userId: string, page: number = 1, limit: number = 10) {
-        console.log(userId);
+    async getWatchlist(currentUser: User, page: number = 1, limit: number = 10) {
         const skip = (page - 1) * limit;
 
         const [favorites, total] = await this.favoriteRepository.findAndCount({
-            where: { user_id: userId },
+            where: { user_id: currentUser.id },
             relations: ['signal'],
             order: { created_at: 'DESC' },
             skip,
@@ -206,7 +207,7 @@ export class SignalService {
             .filter(fav => fav.signal != null)
             .map(fav => fav.signal);
 
-        const data = signals.map(signal => this.mapToResponse(signal, { id: userId }, true));
+        const data = signals.map(signal => this.mapToResponse(signal, currentUser, true));
 
         return {
             data,
@@ -218,5 +219,4 @@ export class SignalService {
             }
         };
     }
-
 }

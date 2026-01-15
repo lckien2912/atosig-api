@@ -11,10 +11,10 @@ export class SignalResponseDto {
   @ApiProperty({ example: "HNX" })
   exchange: string;
 
-  @ApiProperty({ example: 38.42, nullable: true })
+  @ApiProperty({ example: 38400, nullable: true })
   price_base: number | null;
 
-  @ApiProperty({ example: 38.42, nullable: true })
+  @ApiProperty({ example: 38420, nullable: true })
   current_price: number | null;
 
   @ApiProperty({ example: 2.0, nullable: true })
@@ -38,14 +38,14 @@ export class SignalResponseDto {
   @ApiProperty({ example: 18.8 })
   actual_efficiency: number;
 
-  @ApiProperty({ example: "38.50", nullable: true })
-  entry_price: string | null;
+  @ApiProperty({ example: 38500, nullable: true })
+  entry_price: number | null;
 
-  @ApiProperty({ example: "38.50", nullable: true })
-  entry_price_min: string | null;
+  @ApiProperty({ example: 38500, nullable: true })
+  entry_price_min: number | null;
 
-  @ApiProperty({ example: "39.00", nullable: true })
-  entry_price_max: string | null;
+  @ApiProperty({ example: 39000, nullable: true })
+  entry_price_max: number | null;
 
   @ApiProperty({ example: "38.50 - 39.00", nullable: true })
   entry_zone: string | null;
