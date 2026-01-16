@@ -146,7 +146,7 @@ export class ProfileService {
         if (existing) throw new BadRequestException('Email này đã được sử dụng bởi tài khoản khác');
 
         return this.generateAndSendOtp(
-            user.email,
+            dto.newEmail,
             '[ATOSIG] Xác nhận thay đổi Email',
             'Bạn đang yêu cầu thay đổi email. Vui lòng nhập mã này để tiếp tục.'
         )
