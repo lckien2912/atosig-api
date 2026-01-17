@@ -173,7 +173,12 @@ export class SignalService {
             is_expired: signal.is_expired,
             holding_time: isLocked ? null : holdingTimeText,
             is_favorited: isFavorited,
-            close_time: closeTime
+            close_time: closeTime,
+            tp1_hit_at: isLocked ? null : signal.tp1_hit_at,
+            tp2_hit_at: isLocked ? null : signal.tp2_hit_at,
+            tp3_hit_at: isLocked ? null : signal.tp3_hit_at,
+            sl_hit_at: isLocked ? null : signal.sl_hit_at,
+            closed_at: isLocked ? null : signal.closed_at
         };
     }
 

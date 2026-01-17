@@ -128,19 +128,19 @@ export class Signal {
     is_expired: boolean;
 
     @Column({ type: "timestamp", nullable: true })
-    tp1_hit_at: Date;
+    tp1_hit_at: Date | null;
 
     @Column({ type: "timestamp", nullable: true })
-    tp2_hit_at: Date;
+    tp2_hit_at: Date | null;
 
     @Column({ type: "timestamp", nullable: true })
-    tp3_hit_at: Date;
+    tp3_hit_at: Date | null;
 
     @Column({ type: "timestamp", nullable: true })
-    sl_hit_at: Date;
+    sl_hit_at: Date | null;
 
     @Column({ type: "timestamp", nullable: true })
-    closed_at: Date;
+    closed_at: Date | null;
 
     @UpdateDateColumn()
     updated_at: Date;
