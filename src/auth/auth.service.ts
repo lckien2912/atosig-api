@@ -2,32 +2,35 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException,
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
+import { OAuth2Client } from 'google-auth-library';
 import { User } from "src/users/entities/user.entity";
 import { DataSource, Repository } from "typeorm";
 import { RegisterDto } from "./dto/register.dto";
 import * as bcrypt from 'bcrypt';
 import { LoginDto } from "./dto/login.dto";
 import { UserRole, UserSubscriptionTier, KycStatus, VerificationType, LoginType } from "src/users/enums/user-status.enum";
-import { userInfo } from "os";
 import { VerificationCode } from "./entities/verification-code.entity";
 import { ForgotPasswordDto } from "./dto/forgot-password.dto";
 import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { ConfirmRegisterDto } from "./dto/confirm-register.dto";
+import { LoginGoogleDto } from "./dto/login-google.dto";
 import { MailerService } from "@nestjs-modules/mailer";
 import moment from "moment";
 
 @Injectable()
 export class AuthService {
-
     constructor(
         @InjectRepository(User) private userRepository: Repository<User>,
         private jwtService: JwtService,
         @InjectRepository(VerificationCode) private verifyRepo: Repository<VerificationCode>,
-        @InjectRepository(User) private userRepo: Repository<User>,
         private readonly mailerService: MailerService,
         private configService: ConfigService,
-        private dataSource: DataSource
-    ) { }
+        private dataSource: DataSource,
+        private googleClient: OAuth2Client
+    ) {
+        const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
+        this.googleClient = new OAuth2Client(clientId);
+    }
 
     private async generateAndSendOtp(email: string, subject: string, description: string, type: string, data?: any) {
         await this.verifyRepo.delete({ email });
@@ -101,7 +104,7 @@ export class AuthService {
 
                 const newUser = this.userRepository.create({
                     email: record.email,
-                    password: userData.password ? userData.password : '',
+                    password: userData.password,
                     full_name: userData.full_name ? userData.full_name : record.email,
                     role: UserRole.USER,
                     subscription_tier: UserSubscriptionTier.FREE,
@@ -263,59 +266,70 @@ export class AuthService {
     //     }
     // }
 
-    async loginWithGoogle(googleUser: any) {
-        const { email, firstName, lastName, picture, googleId } = googleUser;
-
-        let user = await this.userRepo.findOne({ where: { email } });
-
-        if (user) {
-            if (!user.google_id || user.google_id == undefined || user.google_id == null) {
-                user.google_id = googleId;
-            }
-
-            if (!user.is_verified) {
-                user.is_verified = true;
-            }
-
-            if ((!user.avatar || user.avatar == undefined || user.avatar == null) && picture) {
-                user.avatar = picture;
-            }
-
-            await this.userRepo.save(user);
-
-        } else {
-            user = this.userRepo.create({
-                email,
-                full_name: `${firstName} ${lastName}`.trim(),
-                password: '',
-                google_id: googleId,
-                avatar: picture,
-                role: UserRole.USER,
-                is_verified: true,
-                subscription_tier: UserSubscriptionTier.FREE,
-                kyc_status: KycStatus.UNVERIFIED,
-                login_type: LoginType.GOOGLE
+    async loginWithGoogle(dto: LoginGoogleDto) {
+        try {
+            const ticket = await this.googleClient.verifyIdToken({
+                idToken: dto.token_id,
+                audience: this.configService.get<string>('GOOGLE_CLIENT_ID'),
             });
 
-            await this.userRepo.save(user);
-        }
+            const payload = ticket.getPayload();
+            if (!payload) {
+                throw new UnauthorizedException('Token Google không hợp lệ');
+            }
 
-        const payload = {
-            sub: user.id,
-            email: user.email,
-            role: user.role,
-            avatar: user.avatar,
-            is_verified: user.is_verified
-        };
+            const { email, given_name, picture, sub: googleId } = payload;
 
-        return {
-            access_token: this.jwtService.sign(payload, { expiresIn: '1d' }),
-            user
+            if (!email) {
+                throw new BadRequestException('Email không tồn tại trong token Google');
+            }
+
+            let user = await this.userRepository.findOne({ where: { email } });
+
+            if (user) {
+                if (!user.google_id) {
+                    user.google_id = googleId;
+                }
+
+                if (!user.is_verified) {
+                    user.is_verified = true;
+                }
+
+                if (!user.avatar && picture) {
+                    user.avatar = picture;
+                }
+
+                await this.userRepository.save(user);
+
+            } else {
+                user = this.userRepository.create({
+                    email,
+                    full_name: `${given_name || ''}`.trim() || email,
+                    google_id: googleId,
+                    avatar: picture,
+                    avatar_url: picture,
+                    role: UserRole.USER,
+                    is_verified: true,
+                    subscription_tier: UserSubscriptionTier.FREE,
+                    kyc_status: KycStatus.UNVERIFIED,
+                    login_type: LoginType.GOOGLE
+                });
+
+                await this.userRepository.save(user);
+            }
+
+            return this.generateTokens(user);
+        } catch (error) {
+            console.error('Google login error:', error);
+            if (error instanceof UnauthorizedException || error instanceof BadRequestException) {
+                throw error;
+            }
+            throw new UnauthorizedException('Xác thực Google thất bại');
         }
     }
 
     async forgotPassword(dto: ForgotPasswordDto) {
-        const user = await this.userRepo.findOne({ where: { email: dto.email } });
+        const user = await this.userRepository.findOne({ where: { email: dto.email } });
         if (!user) throw new BadRequestException('Email không hợp lệ');
 
         await this.generateAndSendOtp(
@@ -341,14 +355,14 @@ export class AuthService {
             throw new BadRequestException('Mã xác thực đã hết hạn');
         }
 
-        const user = await this.userRepo.findOne({ where: { email: dto.email } });
+        const user = await this.userRepository.findOne({ where: { email: dto.email } });
         if (!user) throw new NotFoundException('User not found');
 
         const salt = await bcrypt.genSalt();
         const hashedPassword = await bcrypt.hash(dto.newPassword, salt);
 
         user.password = hashedPassword;
-        await this.userRepo.save(user);
+        await this.userRepository.save(user);
 
         await this.verifyRepo.delete({ id: record.id });
 

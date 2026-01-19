@@ -1,13 +1,13 @@
-import { Body, Controller, Get, Post, Req, Res, UseGuards, UseInterceptors } from "@nestjs/common";
-import { ApiBody, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
+import { Body, Controller, Post, UseInterceptors } from "@nestjs/common";
+import { ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
 import { TransformInterceptor } from "../common/interceptors/transform.interceptor";
-import { AuthGuard } from "@nestjs/passport";
 import { ForgotPasswordDto } from "./dto/forgot-password.dto";
 import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { ConfirmRegisterDto } from "./dto/confirm-register.dto";
+import { LoginGoogleDto } from "./dto/login-google.dto";
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -69,25 +69,12 @@ export class AuthController {
     //     return this.authService.verifyCode(body.email, body.code);
     // }
 
-    @Get('google')
-    @UseGuards(AuthGuard('google'))
-    @ApiOperation({ summary: 'Chuyển hướng sang trang đăng nhập Google' })
-    async googleAuth(@Req() req) {
-    }
-
-    @Get('google/redirect')
-    @UseGuards(AuthGuard('google'))
-    @ApiOperation({ summary: 'Google gọi lại để trả kết quả' })
-    async googleAuthRedirect(@Req() req, @Res() res) {
-        const data = await this.authService.loginWithGoogle(req.user);
-        return res.json({
-            message: 'Login Google thành công!',
-            token: data.access_token,
-            user: data.user
-        });
-        // const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-
-        // return res.redirect(`${frontendUrl}/auth/success?token=${data.access_token}&email=${data.user.email}`);
+    @Post('login-google')
+    @ApiOperation({ summary: 'Đăng nhập bằng Google (FE gửi token_id)' })
+    @ApiResponse({ status: 200, description: 'Login Google thành công' })
+    @ApiResponse({ status: 401, description: 'Token không hợp lệ' })
+    async loginGoogle(@Body() dto: LoginGoogleDto) {
+        return this.authService.loginWithGoogle(dto);
     }
 
     @Post('forgot-password')
