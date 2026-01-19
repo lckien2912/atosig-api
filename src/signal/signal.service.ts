@@ -8,6 +8,9 @@ import moment from "moment";
 import { UserFavorite } from "./entities/user-favorite.entity";
 import { User } from "src/users/entities/user.entity";
 import { UserSubscriptionTier } from "src/users/enums/user-status.enum";
+import { MetricsResponseDto } from "./dto/metrics-response.dto";
+import path from "path";
+import * as fs from 'fs';
 
 @Injectable()
 export class SignalService {
@@ -55,6 +58,54 @@ export class SignalService {
                 limit: Number(limit),
                 totalPages: Math.ceil(total / limit),
             },
+        };
+    }
+
+    async geTradingMetrics(): Promise<MetricsResponseDto> {
+        let backtestData: any = {};
+
+        try {
+            const filePath = path.join(process.cwd(), 'backtest_summary.json');
+
+            if (fs.existsSync(filePath)) {
+                const fileContent = fs.readFileSync(filePath, 'utf-8');
+                const json = JSON.parse(fileContent);
+                backtestData = json['Top1'] || {};
+            } else {
+                console.log('File backtest_summary.json not found');
+            }
+        } catch (error) {
+            console.log(error);
+        }
+
+        const winRate = (backtestData.win_rate || 0) * 100;
+        const profitFactor = backtestData.profit_factor || 0;
+        const avgProfitPerTrade = (backtestData.avg_return || 0) * 100;
+
+        const queryBuilder = this.signalsRepository.createQueryBuilder('signal');
+
+        const totalSignals = await queryBuilder.getCount();
+
+        const { maxDrawdownVal } = await queryBuilder
+            .select('MAX(((signal.entry_price_min - signal.stop_loss_price) / signal.entry_price_min) * 100)', 'maxDrawdownVal')
+            .where('signal.entry_price_min > 0')
+            .getRawOne();
+
+        const { avgHoldingSeconds } = await queryBuilder
+            .select('AVG(EXTRACT(EPOCH FROM (signal.holding_period::timestamp - signal.entry_date::timestamp)))', 'avgHoldingSeconds')
+            .where('signal.holding_period IS NOT NULL')
+            .andWhere('signal.entry_date IS NOT NULL')
+            .getRawOne();
+
+        const avgHoldingDays = avgHoldingSeconds ? parseFloat(avgHoldingSeconds) / 86400 : 0;
+
+        return {
+            winRate: Number(winRate.toFixed(2)),
+            profitFactor: Number(profitFactor.toFixed(2)),
+            avgProfit: Number(avgProfitPerTrade.toFixed(2)),
+            totalSignals: totalSignals,
+            avgHoldingTime: Math.round(avgHoldingDays).toString(),
+            maxStopLossPct: maxDrawdownVal ? -Number(Number(maxDrawdownVal).toFixed(2)) : 0,
         };
     }
 

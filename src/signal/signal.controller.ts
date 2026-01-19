@@ -36,6 +36,14 @@ export class SignalController {
         return this.signalService.getWatchlist(req.user, page, limit);
     }
 
+    @Get('metrics')
+    @UseGuards(OptionalJwtAuthGuard)
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Lấy các chỉ số thống kê hiệu suất (Metrics Dashboard)' })
+    async getMetrics() {
+        return this.signalService.geTradingMetrics();
+    }
+
     @Get(":id")
     @UseGuards(OptionalJwtAuthGuard)
     @ApiBearerAuth()
