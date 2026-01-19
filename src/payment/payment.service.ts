@@ -298,9 +298,10 @@ export class PaymentService {
         const accessKey = this.configService.get<string>('MOMO_ACCESS_KEY');
         const secretKey = this.configService.get<string>('MOMO_SECRET_KEY') ?? '';
         const endpoint = this.configService.get<string>('MOMO_ENDPOINT') ?? '';
+        const appUrl = this.configService.get<string>('APP_URL_FE');
 
-        const ipnUrl = this.configService.get<string>('APP_URL') + '/api/v1/payment/momo/ipn';
-        const redirectUrl = this.configService.get<string>('MOMO_RETURN_URL');
+        const ipnUrl = `${appUrl}/api/payment/momo/ipn`;
+        const redirectUrl = `${appUrl}/api/payment/momo/return`;
 
         const requestId = txn.transaction_code;
         const orderId = txn.transaction_code;

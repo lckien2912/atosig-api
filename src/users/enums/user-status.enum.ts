@@ -28,3 +28,16 @@ export enum UserRole {
     ADMIN = 'ADMIN',
     USER = 'USER',
 }
+
+export enum LoginType {
+    EMAIL = 'EMAIL',
+    GOOGLE = 'GOOGLE'
+}
+
+export enum VerificationType {
+    REGISTER = 'REGISTER',
+    FORGOT_PASSWORD = 'FORGOT_PASSWORD',
+    VERIFIED = 'VERIFIED',
+    CHANGE_PASSWORD = 'CHANGE_PASSWORD',
+    CHANGE_EMAIL = 'CHANGE_EMAIL'
+}

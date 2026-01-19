@@ -7,6 +7,7 @@ import { TransformInterceptor } from "../common/interceptors/transform.intercept
 import { AuthGuard } from "@nestjs/passport";
 import { ForgotPasswordDto } from "./dto/forgot-password.dto";
 import { ResetPasswordDto } from "./dto/reset-password.dto";
+import { ConfirmRegisterDto } from "./dto/confirm-register.dto";
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -14,12 +15,20 @@ import { ResetPasswordDto } from "./dto/reset-password.dto";
 export class AuthController {
     constructor(private readonly authService: AuthService) { }
 
+    @Post('register-request')
+    @ApiOperation({ summary: 'Send data register -> Receive OTP' })
+    @ApiResponse({ status: 201, description: 'OTP successfully sent' })
+    @ApiResponse({ status: 400, description: 'Bad Request' })
+    async requestRegister(@Body() dto: RegisterDto) {
+        return this.authService.requestRegister(dto);
+    }
+
     @Post('register')
     @ApiOperation({ summary: 'Register new user' })
     @ApiResponse({ status: 201, description: 'User successfully registered' })
     @ApiResponse({ status: 400, description: 'Bad Request' })
-    async register(@Body() registerDto: RegisterDto) {
-        return this.authService.register(registerDto);
+    async register(@Body() dto: ConfirmRegisterDto) {
+        return this.authService.register(dto);
     }
 
     @Post('login')
@@ -38,27 +47,27 @@ export class AuthController {
         return this.authService.adminLogin(loginDto);
     }
 
-    @Post('send-verify-code')
-    @ApiOperation({ summary: 'Bước 1: Gửi mã OTP về email' })
-    @ApiBody({ schema: { type: 'object', properties: { email: { type: 'string' } } } })
-    async sendVerifyCode(@Body('email') email: string) {
-        return this.authService.sendVerificationCode(email);
-    }
+    // @Post('send-verify-code')
+    // @ApiOperation({ summary: 'Bước 1: Gửi mã OTP về email' })
+    // @ApiBody({ schema: { type: 'object', properties: { email: { type: 'string' } } } })
+    // async sendVerifyCode(@Body('email') email: string) {
+    //     return this.authService.sendVerificationCode(email);
+    // }
 
-    @Post('check-verify-code')
-    @ApiOperation({ summary: 'Bước 2: Kiểm tra mã OTP người dùng nhập' })
-    @ApiBody({
-        schema: {
-            type: 'object',
-            properties: {
-                email: { type: 'string' },
-                code: { type: 'string' }
-            }
-        }
-    })
-    async checkVerifyCode(@Body() body: { email: string; code: string }) {
-        return this.authService.verifyCode(body.email, body.code);
-    }
+    // @Post('check-verify-code')
+    // @ApiOperation({ summary: 'Bước 2: Kiểm tra mã OTP người dùng nhập' })
+    // @ApiBody({
+    //     schema: {
+    //         type: 'object',
+    //         properties: {
+    //             email: { type: 'string' },
+    //             code: { type: 'string' }
+    //         }
+    //     }
+    // })
+    // async checkVerifyCode(@Body() body: { email: string; code: string }) {
+    //     return this.authService.verifyCode(body.email, body.code);
+    // }
 
     @Get('google')
     @UseGuards(AuthGuard('google'))

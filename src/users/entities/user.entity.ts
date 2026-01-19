@@ -1,5 +1,5 @@
 import { BeforeInsert, Column, Entity, PrimaryGeneratedColumn } from "typeorm";
-import { KycStatus, UserRole, UserSubscriptionTier } from "../enums/user-status.enum";
+import { KycStatus, LoginType, UserRole, UserSubscriptionTier } from "../enums/user-status.enum";
 import { v4 as uuidv4 } from 'uuid';
 
 @Entity('users')
@@ -7,16 +7,16 @@ export class User {
     @PrimaryGeneratedColumn('uuid')
     id: string;
 
-    @Column({ type: "varchar" })
+    @Column({ type: "varchar", nullable: false })
     full_name: string;
 
     @Column({ type: "varchar", nullable: false, unique: true })
     email: string;
 
-    @Column({ type: "varchar", nullable: false, select: false })
-    password: string;
+    @Column({ type: "varchar", select: false, nullable: true })
+    password?: string;
 
-    @Column({ nullable: true })
+    @Column({ type: "text", nullable: true })
     avatar_url: string;
 
     @Column({ type: "varchar", nullable: true })
@@ -40,6 +40,9 @@ export class User {
     @Column({ type: 'boolean', default: false })
     is_verified: boolean;
 
+    @Column({ type: 'boolean', default: false })
+    is_locked: boolean;
+
     @Column({ type: 'varchar', default: 'ACTIVE' })
     status: string;
 
@@ -51,6 +54,9 @@ export class User {
 
     @Column({ type: 'varchar', nullable: true })
     avatar: string;
+
+    @Column({ type: 'enum', enum: LoginType, default: LoginType.EMAIL })
+    login_type: LoginType;
 
     // @OneToMany(() => UserFavorite, (fav) => fav.user)
     // favorites: UserFavorite[];

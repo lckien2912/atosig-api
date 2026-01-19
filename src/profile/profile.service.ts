@@ -12,6 +12,7 @@ import { RequestEmailDto } from "./dto/request-email.dto";
 import { VerifyChangeEmailDto } from "./dto/change-email.dto";
 import { VerifyCodePassDto } from "./dto/verify-code-pass.dto";
 import { ConfigService } from "@nestjs/config";
+import { LoginType, VerificationType } from "src/users/enums/user-status.enum";
 
 @Injectable()
 export class ProfileService {
@@ -28,7 +29,7 @@ export class ProfileService {
         return userResponse;
     }
 
-    private async generateAndSendOtp(email: string, subject: string, description: string) {
+    private async generateAndSendOtp(email: string, subject: string, description: string, type: string, data?: any) {
         await this.verifyRepo.delete({ email });
 
         const code = Math.floor(100000 + Math.random() * 900000).toString();
@@ -37,7 +38,9 @@ export class ProfileService {
         const verifyRecord = this.verifyRepo.create({
             email,
             code,
-            expires_at: expiresAt
+            expires_at: expiresAt,
+            type,
+            context_data: data
         });
         await this.verifyRepo.save(verifyRecord);
 
@@ -100,20 +103,37 @@ export class ProfileService {
         const user = await this.userRepository.findOne({ where: { id: userId } });
         if (!user) throw new NotFoundException('User not found');
 
-        if (user.password) {
+        const hashPassword = user.password && user.password.length > 0
+
+        if (user.login_type === LoginType.GOOGLE && !hashPassword) {
+            if (dto.newPassword !== dto.confirmPassword) throw new BadRequestException('Mật khẩu không khớp');
+            user.password = await bcrypt.hash(dto.newPassword, 10);
+            await this.userRepository.save(user);
+
+            return {
+                status: true,
+                message: 'Thiết lập mật khẩu thành công'
+            };
+        } else {
             if (!dto.oldPassword) throw new BadRequestException('Vui lòng nhập mật khẩu cũ');
 
-            const isMatch = await bcrypt.compare(dto.oldPassword, user.password);
-            if (!isMatch) throw new BadRequestException('Mật khẩu cũ không chính xác');
+            if (user.password) {
+                const isMatch = await bcrypt.compare(dto.oldPassword, user.password);
+                if (!isMatch) throw new BadRequestException('Mật khẩu cũ không chính xác');
+            }
+
+            if (dto.newPassword !== dto.confirmPassword) throw new BadRequestException('Mật khẩu không khớp');
+
+            return this.generateAndSendOtp(
+                user.email,
+                '[ATOSIG] Xác nhận thay đổi Mật khẩu',
+                'Bạn đang yêu cầu thay đổi mật khẩu. Vui lòng nhập mã này để tiếp tục.',
+                VerificationType.CHANGE_PASSWORD,
+                {
+                    newPassword: dto.newPassword
+                }
+            )
         }
-
-        if (dto.newPassword !== dto.confirmPassword) throw new BadRequestException('Mật khẩu không khớp');
-
-        return this.generateAndSendOtp(
-            user.email,
-            '[ATOSIG] Xác nhận thay đổi Mật khẩu',
-            'Bạn đang yêu cầu thay đổi mật khẩu. Vui lòng nhập mã này để tiếp tục.'
-        )
     }
 
     async verifyAndChangePassword(userId: string, dto: VerifyCodePassDto) {
@@ -128,7 +148,8 @@ export class ProfileService {
         if (!record) throw new BadRequestException('Mã OTP không chính xác');
         if (new Date() > record.expires_at) throw new BadRequestException('Mã OTP đã hết hạn');
 
-        user.password = await bcrypt.hash(dto.newPassword, 10);
+        const userData = record.context_data as { newPassword: string };
+        user.password = await bcrypt.hash(userData.newPassword, 10);
         await this.userRepository.save(user);
 
         await this.verifyRepo.delete({ id: record.id });
@@ -148,7 +169,11 @@ export class ProfileService {
         return this.generateAndSendOtp(
             dto.newEmail,
             '[ATOSIG] Xác nhận thay đổi Email',
-            'Bạn đang yêu cầu thay đổi email. Vui lòng nhập mã này để tiếp tục.'
+            'Bạn đang yêu cầu thay đổi email. Vui lòng nhập mã này để tiếp tục.',
+            VerificationType.CHANGE_EMAIL,
+            {
+                newEmail: dto.newEmail
+            }
         )
     }
 
@@ -163,7 +188,9 @@ export class ProfileService {
         if (!recordOtp) throw new BadRequestException('Mã xác thực không đúng');
         if (new Date() > recordOtp.expires_at) throw new BadRequestException('Mã xác thực đã hết hạn');
 
-        user.email = dto.newEmail;
+        const userData = recordOtp.context_data as { newEmail: string };
+
+        user.email = userData.newEmail;
         await this.userRepository.save(user);
 
         await this.verifyRepo.delete({ id: recordOtp.id });

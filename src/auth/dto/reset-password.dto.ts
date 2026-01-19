@@ -3,8 +3,8 @@ import { IsEmail, IsNotEmpty, IsString, MinLength, Length, Matches } from 'class
 
 export class ResetPasswordDto {
     @ApiProperty({ example: 'user@example.com' })
-    @IsNotEmpty()
-    @IsEmail()
+    @IsNotEmpty({ message: 'Email không được để trống' })
+    @IsEmail({}, { message: 'Email không đúng định dạng' })
     email: string;
 
     @ApiProperty({ description: 'Mã OTP nhận được trong mail', example: '123456' })

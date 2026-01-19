@@ -38,6 +38,9 @@ export class Signal {
     stop_loss_price: number;
 
     @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
+    stop_loss_pct: number;
+
+    @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
     tp1_price: number;
 
     @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })

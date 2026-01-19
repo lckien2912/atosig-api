@@ -16,7 +16,7 @@ export class SubscriptionPlan {
     @Column({ type: 'decimal', precision: 12, scale: 0 })
     price: number; // Giá bán thực tế (VD: 1990000)
 
-    @Column({ type: 'integer', nullable: true })
+    @Column({ type: 'integer', nullable: true, default: 0 })
     discount_percentage: number;
 
     @Column({ type: 'enum', enum: DuarationDays, default: DuarationDays.WEEK })

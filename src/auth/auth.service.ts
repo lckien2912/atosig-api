@@ -3,17 +3,18 @@ import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
 import { User } from "src/users/entities/user.entity";
-import { Repository } from "typeorm";
+import { DataSource, Repository } from "typeorm";
 import { RegisterDto } from "./dto/register.dto";
 import * as bcrypt from 'bcrypt';
 import { LoginDto } from "./dto/login.dto";
-import { UserRole, UserSubscriptionTier, KycStatus } from "src/users/enums/user-status.enum";
+import { UserRole, UserSubscriptionTier, KycStatus, VerificationType, LoginType } from "src/users/enums/user-status.enum";
 import { userInfo } from "os";
-import moment from "moment";
 import { VerificationCode } from "./entities/verification-code.entity";
-import { MailerService } from "@nestjs-modules/mailer";
 import { ForgotPasswordDto } from "./dto/forgot-password.dto";
 import { ResetPasswordDto } from "./dto/reset-password.dto";
+import { ConfirmRegisterDto } from "./dto/confirm-register.dto";
+import { MailerService } from "@nestjs-modules/mailer";
+import moment from "moment";
 
 @Injectable()
 export class AuthService {
@@ -24,29 +25,106 @@ export class AuthService {
         @InjectRepository(VerificationCode) private verifyRepo: Repository<VerificationCode>,
         @InjectRepository(User) private userRepo: Repository<User>,
         private readonly mailerService: MailerService,
-        private configService: ConfigService
+        private configService: ConfigService,
+        private dataSource: DataSource
     ) { }
 
-    async register(registerDto: RegisterDto) {
-        const existing = await this.userRepository.findOne({ where: { email: registerDto.email } });
-        if (existing) throw new BadRequestException('Email already exists');
+    private async generateAndSendOtp(email: string, subject: string, description: string, type: string, data?: any) {
+        await this.verifyRepo.delete({ email });
 
-        if (registerDto.password !== registerDto.confirmPassword) throw new BadRequestException('Password and confirm password do not match');
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiresAt = moment().add(5, 'minutes').toDate();
 
-        const hashedPassword = await bcrypt.hash(registerDto.password, 10);
+        const verifyRecord = this.verifyRepo.create({
+            email,
+            code,
+            expires_at: expiresAt,
+            type,
+            context_data: data ? data : null
+        });
+        await this.verifyRepo.save(verifyRecord);
 
-        const newUser = this.userRepository.create({
-            ...registerDto,
-            password: hashedPassword,
-            full_name: registerDto.fullName ? registerDto.fullName : '',
-            role: UserRole.USER,
-            subscription_tier: UserSubscriptionTier.FREE,
-            kyc_status: KycStatus.UNVERIFIED
+        try {
+            await this.mailerService.sendMail({
+                to: email,
+                subject: subject,
+                template: 'verify',
+                context: {
+                    code,
+                    email,
+                    description
+                },
+            });
+            return { success: true, message: `Mã OTP đã gửi tới ${email}` };
+        } catch (error) {
+            console.error(error);
+            throw new BadRequestException('Không thể gửi email OTP. Vui lòng thử lại sau.');
+        }
+    }
+
+    async requestRegister(dto: RegisterDto) {
+        const existing = await this.userRepository.findOne({ where: { email: dto.email } });
+        if (existing) throw new BadRequestException('Email này đã đăng ký');
+
+        if (dto.password !== dto.confirmPassword) throw new BadRequestException('Mật khẩu không khớp');
+
+        const hashedPassword = await bcrypt.hash(dto.password, 10);
+
+        return this.generateAndSendOtp(
+            dto.email,
+            '[ATOSIG] OTP đăng ký tài khoản',
+            '',
+            VerificationType.REGISTER,
+            {
+                password: hashedPassword,
+                full_name: dto.fullName || '',
+            }
+        );
+    }
+
+    async register(dto: ConfirmRegisterDto) {
+        const record = await this.verifyRepo.findOne({
+            where: { email: dto.email, code: dto.code }
         });
 
-        await this.userRepository.save(newUser);
+        if (!record) throw new BadRequestException('Mã OTP không hoặc email chính xác');
+        if (new Date() > record.expires_at) throw new BadRequestException('Mã OTP đã hết hạn');
 
-        return this.generateTokens(newUser);
+        if (record.type === VerificationType.REGISTER) {
+            const queryRunner = this.dataSource.createQueryRunner();
+            await queryRunner.connect();
+            await queryRunner.startTransaction();
+
+            try {
+
+                const userData = record.context_data;
+
+                const newUser = this.userRepository.create({
+                    email: record.email,
+                    password: userData.password ? userData.password : '',
+                    full_name: userData.full_name ? userData.full_name : record.email,
+                    role: UserRole.USER,
+                    subscription_tier: UserSubscriptionTier.FREE,
+                    kyc_status: KycStatus.UNVERIFIED,
+                    login_type: LoginType.EMAIL
+                });
+                await this.userRepository.save(newUser);
+
+                await queryRunner.manager.delete(VerificationCode, { id: record.id });
+
+                await queryRunner.commitTransaction();
+
+                return this.generateTokens(newUser);
+
+            } catch (error) {
+                await queryRunner.rollbackTransaction();
+                console.error(error);
+                throw new BadRequestException('Có lỗi xảy ra khi tạo tài khoản. Vui lòng thử lại.');
+            } finally {
+                await queryRunner.release();
+            }
+
+        }
     }
 
     async login(loginDto: LoginDto) {
@@ -55,10 +133,12 @@ export class AuthService {
             select: ['id', 'email', 'password', 'role', 'full_name', 'subscription_tier']
         });
 
-        if (!user) throw new BadRequestException('The email address does not exist in the system.');
+        if (!user) throw new BadRequestException('Tài khoản không tồn tại');
 
-        const isPasswordValid = await bcrypt.compare(loginDto.password, user.password);
-        if (!isPasswordValid) throw new BadRequestException('Incorrect password');
+        const pass = user.password || '';
+
+        const isPasswordValid = await bcrypt.compare(loginDto.password, pass);
+        if (!isPasswordValid) throw new BadRequestException('Mật khẩu không chính xác.');
 
         return this.generateTokens(user);
     }
@@ -70,12 +150,16 @@ export class AuthService {
             select: ['id', 'email', 'password', 'role', 'full_name', 'subscription_tier']
         });
 
-        if (!user || !(await bcrypt.compare(loginDto.password, user.password))) {
-            throw new UnauthorizedException('Incorrect administrator account or password.')
+        if (!user) throw new BadRequestException('Tài khoản không tồn tại');
+
+        const pass = user.password || '';
+
+        if (!(await bcrypt.compare(loginDto.password, pass))) {
+            throw new UnauthorizedException('Tài khoản hoặc mật khẩu không chính xác.')
         }
 
         if (user.role !== UserRole.ADMIN) {
-            throw new ForbiddenException('You do not have permission to access this resource.');
+            throw new ForbiddenException('Bạn không có quyền truy cập');
         }
 
         return this.generateTokens(user);
@@ -108,76 +192,76 @@ export class AuthService {
     }
 
     // Verify email, send opt
-    async sendVerificationCode(email: string) {
-        const user = await this.userRepo.findOne({ where: { email } });
-        if (user && user.is_verified) {
-            throw new BadRequestException('Email này đã được xác thực');
-        }
+    // async sendVerificationCode(email: string) {
+    //     const user = await this.userRepo.findOne({ where: { email } });
+    //     if (user && user.is_verified) {
+    //         throw new BadRequestException('Email này đã được xác thực');
+    //     }
 
-        const code = Math.floor(100000 + Math.random() * 900000).toString();
+    //     const code = Math.floor(100000 + Math.random() * 900000).toString();
 
-        const expiresAt = moment().add(5, 'minutes').toDate();
+    //     const expiresAt = moment().add(5, 'minutes').toDate();
 
-        await this.verifyRepo.delete({ email });
+    //     await this.verifyRepo.delete({ email });
 
-        const verification = this.verifyRepo.create({
-            email,
-            code,
-            expires_at: expiresAt
-        });
-        await this.verifyRepo.save(verification);
+    //     const verification = this.verifyRepo.create({
+    //         email,
+    //         code,
+    //         expires_at: expiresAt
+    //     });
+    //     await this.verifyRepo.save(verification);
 
-        try {
-            await this.mailerService.sendMail({
-                to: email,
-                subject: `Mã xác thực ATOSIG`,
-                template: 'verify',
-                context: {
-                    code: code,
-                    email: email
-                },
-            });
-            return { success: true, message: 'Mã xác thực đã được gửi tới email của bạn.' };
-        } catch (error) {
-            console.log(error);
-            throw new BadRequestException('Không thể gửi email. Vui lòng thử lại sau.');
-        }
-    }
+    //     try {
+    //         await this.mailerService.sendMail({
+    //             to: email,
+    //             subject: `[ATOSIG] Mã xác thực`,
+    //             template: 'verify',
+    //             context: {
+    //                 code: code,
+    //                 email: email
+    //             },
+    //         });
+    //         return { success: true, message: 'Mã xác thực đã được gửi tới email của bạn.' };
+    //     } catch (error) {
+    //         console.log(error);
+    //         throw new BadRequestException('Không thể gửi email. Vui lòng thử lại sau.');
+    //     }
+    // }
 
     // Check otp
-    async verifyCode(email: string, code: string) {
-        const record = await this.verifyRepo.findOne({
-            where: { email, code }
-        });
+    // async verifyCode(email: string, code: string) {
+    //     const record = await this.verifyRepo.findOne({
+    //         where: { email, code }
+    //     });
 
-        if (!record) throw new BadRequestException('Mã xác thực không hợp lệ hoặc email không hợp lệ');
+    //     if (!record) throw new BadRequestException('Mã xác thực không hợp lệ hoặc email không hợp lệ');
 
-        if (new Date() > record.expires_at) {
-            await this.verifyRepo.delete({ id: record.id });
-            throw new BadRequestException('Mã xác thực đã hết hạn. Vui lòng lấy lại mã xác thực.');
-        }
+    //     if (new Date() > record.expires_at) {
+    //         await this.verifyRepo.delete({ id: record.id });
+    //         throw new BadRequestException('Mã xác thực đã hết hạn. Vui lòng lấy lại mã xác thực.');
+    //     }
 
-        const user = await this.userRepo.findOne({ where: { email } });
-        if (user) {
-            user.is_verified = true;
-            await this.userRepo.save(user);
+    //     const user = await this.userRepo.findOne({ where: { email } });
+    //     if (user) {
+    //         user.is_verified = true;
+    //         await this.userRepo.save(user);
 
-            await this.verifyRepo.delete({ id: record.id });
+    //         await this.verifyRepo.delete({ id: record.id });
 
-            return {
-                success: true,
-                is_new_user: false,
-                message: 'Xác thực thành công',
-                user_updated: !!user
-            };
-        } else {
-            return {
-                success: true,
-                is_new_user: true,
-                message: 'Xác thực email thành công. Vui lòng tạo mật khẩu.',
-            };
-        }
-    }
+    //         return {
+    //             success: true,
+    //             is_new_user: false,
+    //             message: 'Xác thực thành công',
+    //             user_updated: !!user
+    //         };
+    //     } else {
+    //         return {
+    //             success: true,
+    //             is_new_user: true,
+    //             message: 'Xác thực email thành công. Vui lòng tạo mật khẩu.',
+    //         };
+    //     }
+    // }
 
     async loginWithGoogle(googleUser: any) {
         const { email, firstName, lastName, picture, googleId } = googleUser;
@@ -200,19 +284,17 @@ export class AuthService {
             await this.userRepo.save(user);
 
         } else {
-            const randomPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8);
-            const hashedPassword = await bcrypt.hash(randomPassword, 10);
-
             user = this.userRepo.create({
                 email,
                 full_name: `${firstName} ${lastName}`.trim(),
-                password: hashedPassword,
+                password: '',
                 google_id: googleId,
                 avatar: picture,
                 role: UserRole.USER,
                 is_verified: true,
                 subscription_tier: UserSubscriptionTier.FREE,
-                kyc_status: KycStatus.UNVERIFIED
+                kyc_status: KycStatus.UNVERIFIED,
+                login_type: LoginType.GOOGLE
             });
 
             await this.userRepo.save(user);
@@ -236,34 +318,12 @@ export class AuthService {
         const user = await this.userRepo.findOne({ where: { email: dto.email } });
         if (!user) throw new BadRequestException('Email không hợp lệ');
 
-        const code = Math.floor(100000 + Math.random() * 900000).toString();
-        const expiresAt = moment().add(5, 'minutes').toDate();
-
-        await this.verifyRepo.delete({ email: dto.email });
-
-        const verifyRecord = this.verifyRepo.create({
-            email: dto.email,
-            code,
-            expires_at: expiresAt
-        });
-        await this.verifyRepo.save(verifyRecord);
-
-        try {
-            await this.mailerService.sendMail({
-                to: dto.email,
-                subject: '[ATOSIG] Khôi phục mật khẩu',
-                template: 'verify',
-                context: {
-                    code: code,
-                    email: dto.email,
-                    description: 'Bạn đang yêu cầu đặt lại mật khẩu. Mã xác thực của bạn là:'
-                },
-            });
-            return { message: `Mã xác thực đã được gửi tới ${dto.email}` };
-        } catch (error) {
-            console.log(error);
-            throw new BadRequestException('Lỗi gửi email. Vui lòng thử lại sau.');
-        }
+        await this.generateAndSendOtp(
+            dto.email,
+            '[ATOSIG] Khôi phục mật khẩu',
+            '',
+            VerificationType.FORGOT_PASSWORD,
+        );
     }
 
     async resetPassword(dto: ResetPasswordDto) {
