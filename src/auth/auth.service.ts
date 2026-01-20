@@ -310,6 +310,7 @@ export class AuthService {
                     avatar_url: picture,
                     role: UserRole.USER,
                     is_verified: true,
+                    is_set_pass: false,
                     subscription_tier: UserSubscriptionTier.FREE,
                     kyc_status: KycStatus.UNVERIFIED,
                     login_type: LoginType.GOOGLE

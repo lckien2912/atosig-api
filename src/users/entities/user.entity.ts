@@ -43,6 +43,9 @@ export class User {
     @Column({ type: 'boolean', default: false })
     is_locked: boolean;
 
+    @Column({ type: 'boolean', default: true })
+    is_set_pass: boolean;
+
     @Column({ type: 'varchar', default: 'ACTIVE' })
     status: string;
 
