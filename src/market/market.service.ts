@@ -115,9 +115,10 @@ export class MarketService {
                     const high = Number(item.HighestPrice || item.High || item.high) / 1000;
                     const low = Number(item.LowestPrice || item.Low || item.low) / 1000;
                     const close = Number(item.ClosePrice || item.Close || item.close) / 1000;
-                    const volume = Number(item.TotalTradedVol || item.totalTradedVol || item.totalTradedVolume) / 1000;
+                    const totalTradedVol = Number(item.TotalTradedVol || item.totalTradedVol || item.totalTradedVolume) / 1000;
+                    const netBuySellVol = Number(item.NetBuySellVol || item.netBuySellVol) / 1000;
 
-                    return { time, open, high, low, close, value: volume };
+                    return { time, open, high, low, close, total_vol: totalTradedVol, net_vol: netBuySellVol };
                 });
 
             const uniqueData = formattedData.filter((v, i, a) => a.findIndex(t => (t.time === v.time)) === i);
