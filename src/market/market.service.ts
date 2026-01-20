@@ -54,7 +54,7 @@ export class MarketService {
         const requests: Promise<any>[] = [];
 
         const chunkDays = 29;
-        const totalChunks = 6;
+        const totalChunks = 8;
 
         for (let i = 0; i < totalChunks; i++) {
             const toDate = moment().subtract(i * chunkDays, 'days');
