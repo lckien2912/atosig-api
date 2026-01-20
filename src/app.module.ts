@@ -17,6 +17,7 @@ import { MailModule } from "./mail/mail.module";
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from "path";
 import { ProfileModule } from "./profile/profile.module";
+import { MarketModule } from "./market/market.module";
 
 @Module({
   imports: [
@@ -51,7 +52,8 @@ import { ProfileModule } from "./profile/profile.module";
     NotificationsModule,
     MailModule,
     AuthModule,
-    ProfileModule
+    ProfileModule,
+    MarketModule
   ],
   controllers: [AppController],
   providers: [AppService],
