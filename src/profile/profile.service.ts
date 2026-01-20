@@ -182,7 +182,7 @@ export class ProfileService {
         if (!user) throw new NotFoundException('User not found');
 
         const recordOtp = await this.verifyRepo.findOne({
-            where: { email: user.email, code: dto.code }
+            where: { email: dto.newEmail, code: dto.code }
         });
 
         if (!recordOtp) throw new BadRequestException('Mã xác thực không đúng');

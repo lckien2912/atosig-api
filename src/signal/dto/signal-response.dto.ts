@@ -73,4 +73,19 @@ export class SignalResponseDto {
 
   @ApiProperty({ example: "2025-11-05T10:30:22.000Z", nullable: true })
   close_time: Date | null;
+
+  @ApiProperty({ example: "2025-11-05T10:30:22.000Z", nullable: true })
+  tp1_hit_at: Date | null;
+
+  @ApiProperty({ example: "2025-11-05T10:30:22.000Z", nullable: true })
+  tp2_hit_at: Date | null;
+
+  @ApiProperty({ example: "2025-11-05T10:30:22.000Z", nullable: true })
+  tp3_hit_at: Date | null;
+
+  @ApiProperty({ example: "2025-11-05T10:30:22.000Z", nullable: true })
+  sl_hit_at: Date | null;
+
+  @ApiProperty({ example: "2025-11-05T10:30:22.000Z", nullable: true })
+  closed_at: Date | null;
 }
