@@ -53,6 +53,7 @@ export class AuthService {
                 subject: subject,
                 template: 'verify',
                 context: {
+                    title: subject,
                     code,
                     email,
                     description
@@ -76,7 +77,7 @@ export class AuthService {
         return this.generateAndSendOtp(
             dto.email,
             '[ATOSIG] OTP đăng ký tài khoản',
-            '',
+            'Bạn vừa yêu cầu mã xác thực để đăng ký tài khoản vào hệ thống.',
             VerificationType.REGISTER,
             {
                 password: hashedPassword,
@@ -194,78 +195,6 @@ export class AuthService {
         }
     }
 
-    // Verify email, send opt
-    // async sendVerificationCode(email: string) {
-    //     const user = await this.userRepo.findOne({ where: { email } });
-    //     if (user && user.is_verified) {
-    //         throw new BadRequestException('Email này đã được xác thực');
-    //     }
-
-    //     const code = Math.floor(100000 + Math.random() * 900000).toString();
-
-    //     const expiresAt = moment().add(5, 'minutes').toDate();
-
-    //     await this.verifyRepo.delete({ email });
-
-    //     const verification = this.verifyRepo.create({
-    //         email,
-    //         code,
-    //         expires_at: expiresAt
-    //     });
-    //     await this.verifyRepo.save(verification);
-
-    //     try {
-    //         await this.mailerService.sendMail({
-    //             to: email,
-    //             subject: `[ATOSIG] Mã xác thực`,
-    //             template: 'verify',
-    //             context: {
-    //                 code: code,
-    //                 email: email
-    //             },
-    //         });
-    //         return { success: true, message: 'Mã xác thực đã được gửi tới email của bạn.' };
-    //     } catch (error) {
-    //         console.log(error);
-    //         throw new BadRequestException('Không thể gửi email. Vui lòng thử lại sau.');
-    //     }
-    // }
-
-    // Check otp
-    // async verifyCode(email: string, code: string) {
-    //     const record = await this.verifyRepo.findOne({
-    //         where: { email, code }
-    //     });
-
-    //     if (!record) throw new BadRequestException('Mã xác thực không hợp lệ hoặc email không hợp lệ');
-
-    //     if (new Date() > record.expires_at) {
-    //         await this.verifyRepo.delete({ id: record.id });
-    //         throw new BadRequestException('Mã xác thực đã hết hạn. Vui lòng lấy lại mã xác thực.');
-    //     }
-
-    //     const user = await this.userRepo.findOne({ where: { email } });
-    //     if (user) {
-    //         user.is_verified = true;
-    //         await this.userRepo.save(user);
-
-    //         await this.verifyRepo.delete({ id: record.id });
-
-    //         return {
-    //             success: true,
-    //             is_new_user: false,
-    //             message: 'Xác thực thành công',
-    //             user_updated: !!user
-    //         };
-    //     } else {
-    //         return {
-    //             success: true,
-    //             is_new_user: true,
-    //             message: 'Xác thực email thành công. Vui lòng tạo mật khẩu.',
-    //         };
-    //     }
-    // }
-
     async loginWithGoogle(dto: LoginGoogleDto) {
         try {
             const ticket = await this.googleClient.verifyIdToken({
@@ -336,7 +265,7 @@ export class AuthService {
         await this.generateAndSendOtp(
             dto.email,
             '[ATOSIG] Khôi phục mật khẩu',
-            '',
+            'Bạn vừa yêu cầu mã xác thực để khôi phục mật khẩu.',
             VerificationType.FORGOT_PASSWORD,
         );
     }

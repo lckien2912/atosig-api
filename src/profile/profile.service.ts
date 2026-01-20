@@ -50,6 +50,7 @@ export class ProfileService {
                 subject: subject,
                 template: 'verify',
                 context: {
+                    title: subject,
                     code,
                     email,
                     description
@@ -197,7 +198,5 @@ export class ProfileService {
 
         return { success: true, message: 'Cập nhật email thành công', new_email: user.email };
     }
-
-
 
 }
