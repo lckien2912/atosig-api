@@ -116,7 +116,7 @@ export class MarketService {
                     const low = Number(item.LowestPrice || item.Low || item.low) / 1000;
                     const close = Number(item.ClosePrice || item.Close || item.close) / 1000;
 
-                    return { time, open, high, low, close };
+                    return { time, open, high, low, close, value: close };
                 });
 
             const uniqueData = formattedData.filter((v, i, a) => a.findIndex(t => (t.time === v.time)) === i);
