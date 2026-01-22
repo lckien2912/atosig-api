@@ -18,6 +18,7 @@ import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from "path";
 import { ProfileModule } from "./profile/profile.module";
 import { MarketModule } from "./market/market.module";
+import { CompanyModule } from "./company/company.module";
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { MarketModule } from "./market/market.module";
     PricingModule,
     PaymentModule,
     NotificationsModule,
+    CompanyModule,
     MailModule,
     AuthModule,
     ProfileModule,

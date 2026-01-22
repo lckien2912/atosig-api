@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { DataImportService } from "./data-import.service";
-import { ApiConsumes, ApiBody } from "@nestjs/swagger";
+import { ApiConsumes, ApiBody, ApiOperation } from "@nestjs/swagger";
 
 @Controller("import")
 export class DataImportController {
@@ -33,5 +33,33 @@ export class DataImportController {
         }
         await this.dataImportService.importCsv(file.buffer);
         return { message: "CSV imported successfully" };
+    }
+
+    @Post("companies")
+    @ApiOperation({ summary: 'Import thông tin công ty (Ticker CSV)' })
+    @UseInterceptors(FileInterceptor("file"))
+    @ApiConsumes("multipart/form-data")
+    @ApiBody({
+        schema: {
+            type: "object",
+            properties: {
+                file: {
+                    type: "string",
+                    format: "binary",
+                },
+            },
+        },
+    })
+    async uploadCompanyCsv(@UploadedFile() file: Express.Multer.File) {
+        if (!file) {
+            throw new BadRequestException('File is required (param name: "file")');
+        }
+
+        const result = await this.dataImportService.importCompanyCsv(file.buffer);
+
+        return {
+            message: "Company CSV imported successfully",
+            details: result
+        };
     }
 }

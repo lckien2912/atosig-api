@@ -6,6 +6,7 @@ import { SignalStatus } from "../signal/enums/signal-status.enum";
 import csv from "csv-parser";
 import { Readable } from "stream";
 import moment from "moment";
+import { Company } from "src/company/entities/company.entity";
 
 interface CsvRow {
     ticker?: string;
@@ -26,6 +27,20 @@ interface CsvRow {
     rr_tp3?: string;
     atr_pct?: string;
     recent_low?: string;
+};
+
+interface CompanyCsvRow {
+    ticker?: string;
+    Year?: string;
+    Quarter?: string;
+    'P/E'?: string;
+    ROE?: string;
+    'Vốn hoá'?: string;
+    'Nợ/VCSH'?: string;
+    'Ghi chú'?: string;
+    'ROE (%)'?: string;
+    exchange?: string;
+    companyProfile?: string;
 }
 
 @Injectable()
@@ -33,6 +48,8 @@ export class DataImportService {
     constructor(
         @InjectRepository(Signal)
         private readonly signalRepository: Repository<Signal>,
+        @InjectRepository(Company)
+        private readonly companyRepository: Repository<Company>,
     ) { }
 
     async importCsv(buffer: Buffer): Promise<boolean> {
@@ -75,6 +92,63 @@ export class DataImportService {
                 })
                 .on("error", (error) => {
                     reject(error instanceof Error ? error : new Error(String(error)));
+                });
+        });
+    }
+
+    async importCompanyCsv(buffer: Buffer): Promise<{ success: boolean; count: number; message: string }> {
+        const csvContent = buffer.toString('utf8').replace(/^\uFEFF/, '');
+        const stream = Readable.from(csvContent);
+        const companies: Company[] = [];
+
+        return new Promise((resolve, reject) => {
+            stream
+                .pipe(csv({
+                    mapHeaders: ({ header }) => header.trim()
+                }))
+                .on('data', (data: unknown) => {
+                    const row = data as CompanyCsvRow;
+                    try {
+                        if (!row.ticker) return;
+
+                        const company = new Company();
+                        company.symbol = row.ticker.trim();
+                        // company.exchange = row.exchange?.trim();
+                        company.year = this.parseNumberCompany(row.Year, true);
+                        company.quarter = this.parseNumberCompany(row.Quarter, true);
+                        company.pe = this.parseDecimal(row['P/E']);
+                        company.roe = this.parseDecimal(row.ROE);
+                        company.market_capitalization = this.parseDecimal(row['Vốn hoá']);
+                        company.debt_to_equity_ratio = this.parseDecimal(row['Nợ/VCSH']);
+                        company.roe_percent = this.parseDecimal(row['ROE (%)']);
+                        company.note = row['Ghi chú'] || '';
+                        company.exchange = row.exchange || '';
+                        const rawProfile = row.companyProfile || '';
+                        company.company_profile = this.stripHtml(rawProfile);
+
+                        companies.push(company);
+                    } catch (error) {
+                        console.error(`Lỗi parse dòng ticker ${row.ticker}:`, error);
+                    }
+                })
+                .on('end', async () => {
+                    try {
+                        if (companies.length > 0) {
+                            await this.companyRepository.save(companies, { chunk: 100 });
+                        }
+
+                        resolve({
+                            success: true,
+                            count: companies.length,
+                            message: `Import thành công ${companies.length} công ty.`
+                        });
+                    } catch (dbError) {
+                        console.error("Lỗi lưu DB:", dbError);
+                        reject(dbError);
+                    }
+                })
+                .on("error", (error) => {
+                    reject(error);
                 });
         });
     }
@@ -131,5 +205,29 @@ export class DataImportService {
         const d = new Date(val);
         if (!isNaN(d.getTime())) return d;
         return new Date();
+    }
+
+    private stripHtml(html: string): string {
+        if (!html) return '';
+        return html.replace(/<[^>]*>?/gm, '').trim();
+    }
+
+    private parseNumberCompany(value: string | undefined, isInt: boolean = false): number {
+        if (!value) return 0;
+        const cleanValue = value.toString().replace(/,/g, '');
+        const num = isInt ? parseInt(cleanValue, 10) : parseFloat(cleanValue);
+        return isNaN(num) ? 0 : num;
+    }
+
+    private parseDecimal(value: string | undefined): string | null {
+        if (!value) return null;
+
+        const clean = value.toString().trim().replace(/,/g, '');
+
+        if (clean === '') return null;
+
+        if (isNaN(Number(clean))) return null;
+
+        return clean;
     }
 }
