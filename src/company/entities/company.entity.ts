@@ -15,6 +15,9 @@ export class Company {
     @Column({ type: 'int' })
     quarter: number;
 
+    @Column({ type: 'varchar', length: 255, nullable: true, default: null })
+    company_name?: string | null;
+
     @Column({ type: 'decimal', precision: 18, scale: 8, nullable: true, default: null })
     pe: string | null;
 
