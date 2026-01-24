@@ -190,6 +190,7 @@ export class DataImportService {
 
         signal.status = SignalStatus.ACTIVE;
         signal.is_premium = true;
+        signal.is_notified = false;
 
         return signal;
     }
