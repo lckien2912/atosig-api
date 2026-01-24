@@ -19,9 +19,12 @@ import { join } from "path";
 import { ProfileModule } from "./profile/profile.module";
 import { MarketModule } from "./market/market.module";
 import { CompanyModule } from "./company/company.module";
+import { TelegramModule } from "./telegram/telegram.module";
+import { ScheduleModule } from "@nestjs/schedule";
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'uploads'),
       serveRoot: '/uploads',
@@ -55,7 +58,8 @@ import { CompanyModule } from "./company/company.module";
     MailModule,
     AuthModule,
     ProfileModule,
-    MarketModule
+    MarketModule,
+    TelegramModule
   ],
   controllers: [AppController],
   providers: [AppService],

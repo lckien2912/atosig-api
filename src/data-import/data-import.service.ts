@@ -188,7 +188,7 @@ export class DataImportService {
         signal.atr_pct = this.parseNumber(row.atr_pct);
         signal.recent_low = this.parseNumber(row.recent_low);
 
-        signal.status = SignalStatus.PENDING;
+        signal.status = SignalStatus.ACTIVE;
         signal.is_premium = true;
 
         return signal;

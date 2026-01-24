@@ -3,13 +3,14 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { ConfigService } from "@nestjs/config";
 import { HttpService } from "@nestjs/axios";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, In } from "typeorm";
+import { Repository, In, MoreThanOrEqual } from "typeorm";
 import { lastValueFrom } from "rxjs";
 import { Signal } from "../signal/entities/signal.entity";
 import { SignalStatus } from "../signal/enums/signal-status.enum";
 import moment from "moment";
 import { NotificationsService } from "src/notification/notifications.service";
 import { NotificationType } from "src/notification/enums/notification.enum";
+import { TelegramService } from "src/telegram/telegram.service";
 
 @Injectable()
 export class CrawlerService {
@@ -27,6 +28,7 @@ export class CrawlerService {
         private readonly signalRepository: Repository<Signal>,
         private readonly httpService: HttpService,
         private readonly notiService: NotificationsService,
+        private readonly telegramService: TelegramService,
         private readonly configService: ConfigService
     ) {
         this.ssiConfig = {
@@ -69,6 +71,45 @@ export class CrawlerService {
             throw error;
         }
     }
+
+    @Cron(CronExpression.EVERY_MINUTE)
+    async scanForNewSignal() {
+        if (this.isJobRunning) {
+            this.logger.warn('⚠️ Previous scan job is still running. Skipping this tick.');
+            return;
+        }
+        this.isJobRunning = true;
+
+        try {
+            const newSignals = await this.signalRepository.find({
+                where: {
+                    is_notified: false,
+                    status: In([SignalStatus.ACTIVE, SignalStatus.PENDING])
+                },
+                take: 5,
+                order: { created_at: 'ASC' }
+            });
+
+            if (newSignals.length === 0) {
+                this.isJobRunning = false;
+                return;
+            }
+
+            this.logger.log(`Found ${newSignals.length} new signals to notify!`);
+
+            for (const signal of newSignals) {
+                await this.telegramService.sendNewSignal(signal);
+                await this.signalRepository.update(signal.id, { is_notified: true });
+                await new Promise(r => setTimeout(r, 1000));
+            }
+
+        } catch (error) {
+            this.logger.error("Error scanning new signals", error);
+        } finally {
+            this.isJobRunning = false;
+        }
+    }
+
 
     /** 
      * Cronjob 1minute
@@ -138,9 +179,9 @@ export class CrawlerService {
 
     /**
      * Cronjob 1hour
-     * update is_expired
+     * update is_expired & Close signals that reached holding period
      */
-    @Cron(CronExpression.EVERY_HOUR)
+    @Cron('59 23 * * *')
     async handleCronUpdateIsExpired() {
         this.logger.log('--- Checking for expired signals ---');
 
@@ -150,19 +191,115 @@ export class CrawlerService {
             const result = await this.signalRepository
                 .createQueryBuilder()
                 .update(Signal)
-                .set({ is_expired: true })
+                .set({
+                    is_expired: true,
+                    status: SignalStatus.CLOSED,
+                    closed_at: () => "NOW()"
+                })
                 .where("is_expired = :isExpired", { isExpired: false })
                 .andWhere("holding_period < :now", { now })
                 .andWhere("status != :status", { status: SignalStatus.CLOSED })
                 .execute();
 
             if (result.affected && result.affected > 0) {
-                this.logger.log(`✅ Auto-expired ${result.affected} signals.`);
+                this.logger.log(`✅ Auto-expired and CLOSED ${result.affected} signals.`);
             } else {
                 this.logger.log('No signals expired this hour.');
             }
         } catch (error) {
             this.logger.error('Error auto-expiring signals', error);
+        }
+    }
+
+    /**
+     * Cronjob Daily Summary (e.g. at 17:00 when market closes or 23:59)
+     */
+    @Cron('30 17 * * 1-5') // Run at 17:30 Mon-Fri (After market close)
+    // @Cron(CronExpression.EVERY_MINUTE)
+    async handleCronDailySummary() {
+        if (this.isJobRunning) {
+            this.logger.warn('⚠️ Summary job is still running. Skipping.');
+            return;
+        }
+        this.isJobRunning = true;
+
+        this.logger.log('--- Generating Daily PnL Summary ---');
+        try {
+            const todayStr = moment().format('YYYY-MM-DD');
+            const startOfDay = moment().startOf('day').toDate();
+
+            const activeSignals = await this.signalRepository.find({
+                where: { status: In([SignalStatus.ACTIVE, SignalStatus.PENDING]) }
+            });
+
+            const closedSignals = await this.signalRepository.find({
+                where: {
+                    status: SignalStatus.CLOSED,
+                    closed_at: MoreThanOrEqual(startOfDay)
+                }
+            });
+
+            const allSignals = [...activeSignals, ...closedSignals];
+
+            if (allSignals.length === 0) {
+                this.logger.log('No signals to summarize.');
+                return;
+            }
+
+            let profitList: string[] = [];
+            let lossList: string[] = [];
+            let totalProfit = 0;
+
+            for (const signal of allSignals) {
+                const highestPrice = Number(signal.highest_price);
+                const entryMin = Number(signal.entry_price_min);
+                const entryMax = Number(signal.entry_price_max || signal.entry_price_min);
+                const entryAvg = (entryMin + entryMax) / 2;
+
+                if (entryAvg === 0 || highestPrice === 0) continue;
+
+                const pnl = ((highestPrice - entryAvg) / entryAvg) * 100;
+                totalProfit += pnl;
+
+                const isClosed = signal.status === SignalStatus.CLOSED;
+                const statusSuffix = isClosed ? ' (Position closed)' : '';
+                const icon = (isClosed && pnl > 0) ? ' ✅✅✅' : '';
+
+                const line = `${signal.symbol}: ${pnl.toFixed(2)}%${statusSuffix}${icon}`;
+
+                if (pnl >= 0) {
+                    profitList.push(line);
+                } else {
+                    lossList.push(line);
+                }
+            }
+
+            let message = `Summary of profit/loss to date (${todayStr}):\n`;
+
+            message += `💹\n`;
+            if (profitList.length > 0) {
+                message += profitList.join('\n') + '\n';
+            } else {
+                message += '(None)\n';
+            }
+
+            message += `🛑\n`;
+            if (lossList.length > 0) {
+                message += lossList.join('\n') + '\n';
+            } else {
+                message += '(None)\n';
+            }
+
+            message += `💹\n`;
+            message += `Profit: ${totalProfit.toFixed(2)}%`;
+
+            await this.telegramService.sendDailySummary(message);
+            this.logger.log('Daily Summary Sent to Telegram');
+
+        } catch (error) {
+            this.logger.error('Error generating daily summary', error);
+        } finally {
+            this.isJobRunning = false;
         }
     }
 
@@ -190,10 +327,13 @@ export class CrawlerService {
             // Check data structure return
             if (data && data.data && data.data.length > 0) {
                 const latestData = data.data[0];
+                console.log('last data', latestData);
 
                 const rawPrice = latestData.MatchPrice
                     || latestData.ClosePrice
                     || latestData.ClosingPrice;
+
+                const highestPrice = latestData.HighestPrice;
 
                 const currentPrice = parseFloat(rawPrice);
 
@@ -213,6 +353,7 @@ export class CrawlerService {
 
                         const updateData: any = {
                             current_price: currentPrice,
+                            highest_price: highestPrice,
                             updated_at: new Date()
                         };
 
@@ -223,6 +364,24 @@ export class CrawlerService {
                         if (signal.status === SignalStatus.PENDING) {
                             updateData.status = SignalStatus.ACTIVE;
                         }
+
+                        // T+2.5 Logic
+                        const T_PLUS_2_5_MS = 2.5 * 24 * 60 * 60 * 1000;
+                        const timeSinceCreation = new Date().getTime() - new Date(signal.created_at).getTime();
+
+                        if (timeSinceCreation < T_PLUS_2_5_MS) {
+                            await this.signalRepository.update(signal.id, {
+                                current_price: currentPrice,
+                                current_change_percent: !isNaN(changePercent) ? changePercent : signal.current_change_percent,
+                                updated_at: new Date()
+                            });
+                            continue;
+                        }
+
+                        // tính toán pnl để bắn tele có thể sửa lại theo công thức
+                        const entryPrice = Number(signal.entry_price_min);
+                        let pnlPercent = ((currentPrice - entryPrice) / entryPrice) * 100;
+                        const pnlFormatted = parseFloat(pnlPercent.toFixed(2));
 
                         if (currentPrice >= Number(signal.tp1_price) && !signal.tp1_hit_at) {
                             updateData.tp1_hit_at = new Date();
@@ -236,7 +395,14 @@ export class CrawlerService {
                                 price: currentPrice,
                                 change_percent: changePercent,
                                 signal_id: signal.id
-                            })
+                            });
+
+                            // Send message to telegram
+                            await this.telegramService.sendMessageToTelegram({
+                                symbol,
+                                type: 'TP1',
+                                pnl_percent: pnlFormatted,
+                            });
                         }
 
                         if (currentPrice >= Number(signal.tp2_price) && !signal.tp2_hit_at) {
@@ -251,12 +417,22 @@ export class CrawlerService {
                                 price: currentPrice,
                                 change_percent: changePercent,
                                 signal_id: signal.id
-                            })
+                            });
+
+                            // Send message to telegram
+                            await this.telegramService.sendMessageToTelegram({
+                                symbol,
+                                type: 'TP2',
+                                pnl_percent: pnlFormatted,
+                            });
                         }
 
+                        // TP3 -> Close immediately
                         if (currentPrice >= Number(signal.tp3_price) && !signal.tp3_hit_at) {
                             updateData.tp3_hit_at = new Date();
-                            this.logger.log(`🚀 ${symbol} HIT TP3 at ${currentPrice}`);
+                            updateData.status = SignalStatus.CLOSED;
+                            updateData.closed_at = new Date();
+                            this.logger.log(`🚀 ${symbol} HIT TP3 at ${currentPrice} -> CLOSED`);
 
                             // call noti
                             await this.notiService.createSignalNotification({
@@ -266,12 +442,18 @@ export class CrawlerService {
                                 price: currentPrice,
                                 change_percent: changePercent,
                                 signal_id: signal.id
-                            })
+                            });
+
+                            // Send message to telegram
+                            await this.telegramService.sendMessageToTelegram({
+                                symbol,
+                                type: 'TP3',
+                                pnl_percent: pnlFormatted,
+                            });
                         }
 
                         if (currentPrice <= Number(signal.stop_loss_price) && !signal.sl_hit_at) {
                             updateData.sl_hit_at = new Date();
-                            updateData.status = SignalStatus.CLOSED;
                             this.logger.log(`🔻 ${symbol} HIT SL at ${currentPrice}`);
 
                             // call noti
@@ -282,7 +464,14 @@ export class CrawlerService {
                                 price: currentPrice,
                                 change_percent: changePercent,
                                 signal_id: signal.id
-                            })
+                            });
+
+                            // Send message to telegram
+                            await this.telegramService.sendMessageToTelegram({
+                                symbol,
+                                type: 'SL',
+                                pnl_percent: pnlFormatted,
+                            });
                         }
 
                         const updateResult = await this.signalRepository.update({
@@ -292,7 +481,7 @@ export class CrawlerService {
                         }, updateData);
 
                         if (updateResult.affected !== undefined && updateResult.affected > 0) {
-                            this.logger.log(`✅ SUCCESS: Updated ${symbol} to price ${currentPrice}`);
+                            this.logger.log(`✅ SUCCESS: Updated ${symbol} to price ${currentPrice} & highest price ${highestPrice}`);
                         } else {
                             this.logger.warn(`⚠️ SKIPPED: ${symbol} fetched ${currentPrice} but no ACTIVE/PENDING signal found to update.`);
                         }

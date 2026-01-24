@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, In, MoreThanOrEqual } from "typeorm";
+import { Repository, In } from "typeorm";
 import { Signal } from "./entities/signal.entity";
 import { SignalResponseDto } from "./dto/signal-response.dto";
 import { SignalDisplayStatus, SignalStatus } from "./enums/signal-status.enum";
@@ -23,23 +23,30 @@ export class SignalService {
         const { page, limit, duration, currentUser } = query;
         const skip = (page - 1) * limit;
 
-        const where: any = {};
+        const queryBuilder = this.signalsRepository.createQueryBuilder("signal");
 
         if (duration) {
             const now = moment();
             if (duration === "1M") {
-                where.created_at = MoreThanOrEqual(now.subtract(1, 'months').toDate());
+                queryBuilder.where("signal.created_at >= :fromDate", { fromDate: now.subtract(1, 'months').toDate() });
             } else if (duration === "3M") {
-                where.created_at = MoreThanOrEqual(now.subtract(3, 'months').toDate());
+                queryBuilder.where("signal.created_at >= :fromDate", { fromDate: now.subtract(3, 'months').toDate() });
             }
         }
 
-        const [signals, total] = await this.signalsRepository.findAndCount({
-            where,
-            order: { created_at: "DESC" },
-            skip,
-            take: limit,
-        });
+        // Sort: Active/Pending first, then Closed
+        queryBuilder.orderBy(`
+            CASE 
+                WHEN signal.status IN ('ACTIVE', 'PENDING') THEN 1 
+                ELSE 2 
+            END
+        `, "ASC");
+
+        queryBuilder.addOrderBy("signal.created_at", "DESC");
+
+        queryBuilder.skip(skip).take(limit);
+
+        const [signals, total] = await queryBuilder.getManyAndCount();
 
         let favoritedSignalIds = new Set<string>();
         if (currentUser) {
@@ -282,5 +289,61 @@ export class SignalService {
                 totalPages: Math.ceil(total / limit),
             }
         };
+    }
+
+    async findAllForAdmin(query: {
+        page: number;
+        limit: number;
+        symbol?: string;
+        status?: string
+    }) {
+        const { page, limit, symbol, status } = query;
+        const skip = (page - 1) * limit;
+
+        const queryBuilder = this.signalsRepository.createQueryBuilder('signal');
+
+        if (symbol) {
+            queryBuilder.andWhere('signal.symbol ILIKE :symbol', { symbol: `%${symbol}%` });
+        }
+
+        if (status) {
+            queryBuilder.andWhere('signal.status = :status', { status });
+        }
+
+        queryBuilder.orderBy('signal.created_at', 'DESC');
+
+        queryBuilder.skip(skip).take(limit);
+
+        const [data, total] = await queryBuilder.getManyAndCount();
+
+        return {
+            data,
+            meta: {
+                total,
+                page: Number(page),
+                limit: Number(limit),
+                totalPages: Math.ceil(total / limit),
+            }
+        };
+    }
+
+    async findOneForAdmin(id: string) {
+        const signal = await this.signalsRepository.findOne({
+            where: { id }
+        });
+
+        if (!signal) {
+            throw new NotFoundException(`Signal with ID ${id} not found`);
+        }
+
+        return signal;
+    }
+
+    async deleteSignal(signalId: string) {
+        const signal = await this.signalsRepository.findOne({ where: { id: signalId } });
+        if (!signal) throw new NotFoundException(`Không tìm thấy signal với id ${signalId}`);
+
+        await this.signalsRepository.remove(signal);
+        return { message: 'Signal deleted succussfully' };
     }
 }

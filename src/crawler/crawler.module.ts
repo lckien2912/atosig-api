@@ -10,7 +10,6 @@ import { CrawlerController } from "./crawler.controller";
 @Module({
     imports: [
         HttpModule,
-        ScheduleModule.forRoot(),
         TypeOrmModule.forFeature([Signal]),
         NotificationsModule
     ],

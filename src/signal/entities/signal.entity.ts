@@ -124,6 +124,9 @@ export class Signal {
     @Column({ default: true })
     is_premium: boolean;
 
+    @Column({ default: false })
+    is_notified: boolean;
+
     @CreateDateColumn()
     created_at: Date;
 
@@ -141,6 +144,9 @@ export class Signal {
 
     @Column({ type: "timestamp", nullable: true })
     sl_hit_at: Date | null;
+
+    @Column({ type: "decimal", default: 0 })
+    highest_price: number;
 
     @Column({ type: "timestamp", nullable: true })
     closed_at: Date | null;
