@@ -159,7 +159,7 @@ export class AuthService {
         const pass = user.password || '';
 
         if (!(await bcrypt.compare(loginDto.password, pass))) {
-            throw new UnauthorizedException('Tài khoản hoặc mật khẩu không chính xác.')
+            throw new BadRequestException('Mật khẩu không chính xác.')
         }
 
         if (user.role !== UserRole.ADMIN) {

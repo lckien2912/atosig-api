@@ -327,7 +327,6 @@ export class CrawlerService {
             // Check data structure return
             if (data && data.data && data.data.length > 0) {
                 const latestData = data.data[0];
-                console.log('last data', latestData);
 
                 const rawPrice = latestData.MatchPrice
                     || latestData.ClosePrice

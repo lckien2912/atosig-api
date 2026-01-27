@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { Notification } from './entities/notification.entity';
 import { NotificationsGateway } from './notifications.gateway';
 import { NotificationType } from './enums/notification.enum';
@@ -118,7 +118,7 @@ export class NotificationsService {
         const notifications = await this.notiRepo.find({
             where: [
                 { user_id: userId }, // Tin riêng
-                { user_id: undefined }    // Tin chung
+                { user_id: IsNull() }    // Tin chung
             ],
             order: { created_at: 'DESC' },
             skip: (page - 1) * limit,
@@ -173,7 +173,7 @@ export class NotificationsService {
         });
 
         const total = await this.notiRepo.count({
-            where: [{ user_id: userId }, { user_id: undefined }]
+            where: [{ user_id: userId }, { user_id: IsNull() }]
         });
 
         return {
@@ -216,7 +216,7 @@ export class NotificationsService {
         await this.notiRepo.update({ user_id: userId, is_read: false }, { is_read: true });
 
         const allGlobalNotis = await this.notiRepo.find({
-            where: { user_id: undefined },
+            where: { user_id: IsNull() },
             select: ['id']
         });
 
