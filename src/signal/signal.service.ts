@@ -3,6 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, In } from "typeorm";
 import { Signal } from "./entities/signal.entity";
 import { SignalResponseDto } from "./dto/signal-response.dto";
+import { CreateSignalDto } from "./dto/create-signal.dto";
 import { SignalDisplayStatus, SignalStatus } from "./enums/signal-status.enum";
 import moment from "moment";
 import { UserFavorite } from "./entities/user-favorite.entity";
@@ -345,5 +346,55 @@ export class SignalService {
 
         await this.signalsRepository.remove(signal);
         return { message: 'Signal deleted succussfully' };
+    }
+
+    async create(dto: CreateSignalDto) {
+        const entryMin = dto.entry_price_min || dto.entry_price;
+        const entryMax = dto.entry_price_max || dto.entry_price;
+        const entryAvg = (entryMin + entryMax) / 2;
+        const priceBase = dto.price_base;
+
+        const sl = dto.stop_loss_price;
+        const tp1 = dto.tp1_price;
+        const tp2 = dto.tp2_price || 0;
+        const tp3 = dto.tp3_price || 0;
+
+        const stop_loss_pct = dto.sl_pct || 0;
+
+        const tp1_pct = dto.tp1_pct || 0;
+        const tp2_pct = dto.tp2_pct || 0;
+        const tp3_pct = dto.tp3_pct || 0;
+
+        const rr_tp1 = dto.tp1_pct || 0;
+        const rr_tp2 = dto.tp2_pct || 0;
+        const rr_tp3 = dto.tp3_pct || 0;
+
+        const signal = this.signalsRepository.create({
+            ...dto,
+            price_base: priceBase,
+            entry_price_min: entryMin,
+            entry_price_max: entryMax,
+            signal_date: dto.signal_date ? new Date(dto.signal_date) : new Date(),
+            entry_date: dto.entry_date ? new Date(dto.entry_date) : new Date(),
+            stop_loss_price: sl,
+            tp1_price: tp1,
+            tp2_price: tp2,
+            tp3_price: tp3,
+            stop_loss_pct,
+            tp1_pct,
+            tp2_pct,
+            tp3_pct,
+            rr_tp1,
+            rr_tp2,
+            rr_tp3,
+            atr_pct: dto.atr_pct || 0,
+            status: SignalStatus.ACTIVE,
+            is_premium: dto.is_premium ?? true,
+            is_notified: false,
+            is_expired: false,
+            holding_period: dto.holding_period || moment(dto.signal_date).add(10, 'days').toDate(),
+        });
+
+        return this.signalsRepository.save(signal);
     }
 }

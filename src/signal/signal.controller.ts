@@ -1,6 +1,7 @@
-import { Controller, Get, Param, Query, UseGuards, UseInterceptors, Request, Post, Delete } from "@nestjs/common";
+import { Controller, Get, Param, Query, UseGuards, UseInterceptors, Request, Post, Delete, Body } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
 import { SignalService } from "./signal.service";
+import { CreateSignalDto } from "./dto/create-signal.dto";
 import { TransformInterceptor } from "../common/interceptors/transform.interceptor";
 import { OptionalJwtAuthGuard } from "src/auth/guards/optional-jwt-auth.guard";
 import { JwtAuthGuard } from "src/auth/guards/jwt-auth.guard";
@@ -59,6 +60,14 @@ export class SignalController {
     @ApiOperation({ summary: 'Thêm/Xóa tín hiệu khỏi Watchlist (Toggle)' })
     toggleFavorite(@Param("id") id: string, @Request() req) {
         return this.signalService.toggleFavorite(id, req.user.id);
+    }
+
+    @Post()
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @ApiBearerAuth('access-token')
+    @ApiOperation({ summary: '[ADMIN] Tạo tín hiệu mới (Create Signal)' })
+    create(@Body() createSignalDto: CreateSignalDto) {
+        return this.signalService.create(createSignalDto);
     }
 
     @Get('admin/list')

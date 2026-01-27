@@ -16,6 +16,7 @@ interface CsvRow {
     entry_date?: string;
     entry_price?: string;
     sl_price?: string;
+    sl_pct?: string;
     tp1_price?: string;
     tp2_price?: string;
     tp3_price?: string;
@@ -172,6 +173,7 @@ export class DataImportService {
         signal.entry_price_max = this.parseNumber(row.entry_price);
 
         signal.stop_loss_price = this.parseNumber(row.sl_price) || 0;
+        signal.stop_loss_pct = this.parseNumber(row.sl_pct) || 0;
 
         signal.tp1_price = this.parseNumber(row.tp1_price) || 0;
         signal.tp2_price = this.parseNumber(row.tp2_price) || 0;
