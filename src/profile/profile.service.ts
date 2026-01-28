@@ -106,9 +106,10 @@ export class ProfileService {
 
         const hashPassword = user.password && user.password.length > 0
 
-        if (user.login_type === LoginType.GOOGLE && !hashPassword) {
+        if (user.login_type === LoginType.GOOGLE && !hashPassword && !user.is_set_pass) {
             if (dto.newPassword !== dto.confirmPassword) throw new BadRequestException('Mật khẩu không khớp');
             user.password = await bcrypt.hash(dto.newPassword, 10);
+            user.is_set_pass = true;
             await this.userRepository.save(user);
 
             return {
