@@ -43,6 +43,19 @@ export class SignalService {
             END
         `, "ASC");
 
+        // Sort Active signals by actualEfficiency DESC (higher efficiency first)
+        queryBuilder.addOrderBy(
+            `
+            CASE 
+                WHEN signal.status IN ('ACTIVE', 'PENDING') 
+                THEN ((signal.current_price - (signal.entry_price_min + signal.entry_price_max) / 2.0) / 
+                      ((signal.entry_price_min + signal.entry_price_max) / 2.0)) * 100
+                ELSE -999999
+            END
+        `,
+            'DESC'
+        );
+
         queryBuilder.addOrderBy("signal.created_at", "DESC");
 
         queryBuilder.skip(skip).take(limit);
