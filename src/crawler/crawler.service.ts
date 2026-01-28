@@ -447,12 +447,14 @@ export class CrawlerService {
                             await this.telegramService.sendMessageToTelegram({
                                 symbol,
                                 type: 'TP3',
-                                pnl_percent: pnlFormatted,
+                                pnl_percent: pnlFormatted
                             });
                         }
 
                         if (currentPrice <= Number(signal.stop_loss_price) && !signal.sl_hit_at) {
                             updateData.sl_hit_at = new Date();
+                            updateData.status = SignalStatus.CLOSED;
+                            updateData.closed_at = new Date();
                             this.logger.log(`🔻 ${symbol} HIT SL at ${currentPrice}`);
 
                             // call noti
@@ -469,22 +471,35 @@ export class CrawlerService {
                             await this.telegramService.sendMessageToTelegram({
                                 symbol,
                                 type: 'SL',
-                                pnl_percent: pnlFormatted,
+                                pnl_percent: pnlFormatted
                             });
                         }
 
-                        const updateResult = await this.signalRepository.update({
-                            id: signal.id,
-                            symbol: symbol,
-                            status: In([SignalStatus.ACTIVE, SignalStatus.PENDING])
-                        }, updateData);
+                        // Check expired: nếu holding_period < thời gian hiện tại thì update status = CLOSED
+                        const now = new Date();
+                        if (signal.holding_period && now > new Date(signal.holding_period) && signal.status !== SignalStatus.CLOSED) {
+                            updateData.status = SignalStatus.CLOSED;
+                            updateData.is_expired = true;
+                            if (!updateData.closed_at) {
+                                updateData.closed_at = new Date();
+                            }
+                            this.logger.log(`⏰ ${symbol} EXPIRED - Auto closed`);
+                        }
+
+                        const updateResult = await this.signalRepository.update(
+                            {
+                                id: signal.id,
+                                symbol: symbol,
+                                status: In([SignalStatus.ACTIVE, SignalStatus.PENDING])
+                            },
+                            updateData
+                        );
 
                         if (updateResult.affected !== undefined && updateResult.affected > 0) {
                             this.logger.log(`✅ SUCCESS: Updated ${symbol} to price ${currentPrice} & highest price ${highestPrice}`);
                         } else {
                             this.logger.warn(`⚠️ SKIPPED: ${symbol} fetched ${currentPrice} but no ACTIVE/PENDING signal found to update.`);
                         }
-
                     }
 
                     return true;
