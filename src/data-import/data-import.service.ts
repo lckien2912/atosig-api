@@ -32,6 +32,7 @@ interface CsvRow {
 
 interface CompanyCsvRow {
     ticker?: string;
+    companyName?: string;
     Year?: string;
     Quarter?: string;
     'P/E'?: string;
@@ -114,6 +115,7 @@ export class DataImportService {
 
                         const company = new Company();
                         company.symbol = row.ticker.trim();
+                        company.company_name = row.companyName?.trim();
                         // company.exchange = row.exchange?.trim();
                         company.year = this.parseNumberCompany(row.Year, true);
                         company.quarter = this.parseNumberCompany(row.Quarter, true);
