@@ -128,7 +128,7 @@ export class ProfileService {
 
             return this.generateAndSendOtp(
                 user.email,
-                '[ATOSIG] Xác nhận thay đổi Mật khẩu',
+                '[ATOSIG] Xác nhận thay Đổi mật khẩu',
                 'Bạn đang yêu cầu thay đổi mật khẩu. Vui lòng nhập mã này để tiếp tục.',
                 VerificationType.CHANGE_PASSWORD,
                 {
