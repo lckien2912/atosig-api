@@ -168,6 +168,9 @@ export class SignalService {
         const tp2 = Number(signal.tp2_price);
         const tp3 = Number(signal.tp3_price);
         const sl = Number(signal.stop_loss_price);
+        const tp1_pct = ((tp1 - entryAvg) / entryAvg) * 100;
+        const tp2_pct = ((tp2 - entryAvg) / entryAvg) * 100;
+        const tp3_pct = ((tp3 - entryAvg) / entryAvg) * 100;
 
         // 1. Lãi kỳ vọng
         // Formula: (Tp3_price - AVG(entry_price))/AVG(entry_price) x 100%
@@ -177,10 +180,21 @@ export class SignalService {
         }
 
         // 2. Hiệu quả tạm tính
-        // Formula: (market_price - AVG(entry_price))/AVG(entry_price) x 100%
         let actualEfficiency = 0;
         if (entryAvg > 0) {
-            actualEfficiency = ((marketPrice - entryAvg) / entryAvg) * 100;
+            const getClosedSignalEfficiency = () => {
+                if (signal.tp3_hit_at) return tp3_pct || 0;
+                if (signal.tp2_hit_at) return tp2_pct || 0;
+                if (signal.tp1_hit_at) return tp1_pct || 0;
+                return ((marketPrice - entryAvg) / entryAvg) * 100;
+            };
+            const getOpenSignalEfficiency = () => {
+                if (marketPrice < tp3 && signal.tp3_hit_at) return tp3_pct || 0;
+                if (marketPrice < tp2 && signal.tp2_hit_at) return tp2_pct || 0;
+                if (marketPrice < tp1 && signal.tp1_hit_at) return tp1_pct || 0;
+                return ((marketPrice - entryAvg) / entryAvg) * 100;
+            };
+            actualEfficiency = signal.status === SignalStatus.CLOSED ? getClosedSignalEfficiency() : getOpenSignalEfficiency();
         }
 
         // Handle status
@@ -235,8 +249,8 @@ export class SignalService {
             signal_date: startDate,
             status: signal.status,
             status_code: statusCode,
-            expected_profit: Number(expectedProfit.toFixed(2)),
-            actual_efficiency: Number(actualEfficiency.toFixed(2)),
+            expected_profit: expectedProfit,
+            actual_efficiency: actualEfficiency,
             entry_price: isLocked ? null : entryMin,
             entry_price_min: isLocked ? null : entryMin,
             entry_price_max: isLocked ? null : entryMax,
