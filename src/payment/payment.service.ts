@@ -281,7 +281,11 @@ export class PaymentService {
 
             if (gateway === PaymentGateway.VNPAY) return { RspCode: '00', Message: 'Confirm Success' };
 
-            return { message: 'Success' };
+            return {
+                message: 'IPN Processed',
+                status: isSuccess ? 'SUCCESS' : 'FAILED',
+                gateway_response: isSuccess ? 'Payment Success' : 'Payment Failed/Cancelled'
+            };
 
         } catch (err) {
             await queryRunner.rollbackTransaction();

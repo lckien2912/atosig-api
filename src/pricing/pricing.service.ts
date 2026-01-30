@@ -8,6 +8,7 @@ import { UpdatePlanDto } from './dto/update-plan.dto';
 import { User } from '../users/entities/user.entity';
 import moment, { now } from 'moment';
 import { SubscriptionStatus } from './enums/pricing.enum';
+import { UserSubscriptionTier } from '../users/enums/user-status.enum';
 
 @Injectable()
 export class PricingService {
@@ -170,28 +171,49 @@ export class PricingService {
      * Huỷ gia hạn gói dịch vụ
      */
     async cancelRenewal(userId: string) {
-        const currentSub = await this.subscriptionRepository.findOne({
-            where: {
-                user_id: userId,
-                status: SubscriptionStatus.ACTIVE,
-                end_date: MoreThan(new Date())
-            },
-            order: { end_date: 'DESC' }
-        });
+        const queryRunner = this.dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
 
-        if (!currentSub) throw new BadRequestException('Bạn không có gói dịch vụ nào đang hoạt động để huỷ');
+        try {
+            const currentSub = await this.subscriptionRepository.findOne({
+                where: {
+                    user_id: userId,
+                    status: SubscriptionStatus.ACTIVE,
+                    end_date: MoreThan(new Date())
+                },
+                order: { end_date: 'DESC' }
+            });
 
-        if (currentSub.status === SubscriptionStatus.CANCELLED) throw new BadRequestException('Gói dịch vụ này đã được huỷ gia hạn trước đó');
+            if (!currentSub) throw new BadRequestException('Bạn không có gói dịch vụ nào đang hoạt động để huỷ');
 
-        currentSub.status = SubscriptionStatus.CANCELLED;
-        currentSub.updated_at = new Date();
-        await this.subscriptionRepository.save(currentSub);
+            if (currentSub.status === SubscriptionStatus.CANCELLED) throw new BadRequestException('Gói dịch vụ này đã được huỷ gia hạn trước đó');
 
-        return {
-            message: 'Đã huỷ gia hạn thành công.',
-            end_date: currentSub.end_date,
-            cancellation_date: currentSub.updated_at
-        };
+            currentSub.status = SubscriptionStatus.CANCELLED;
+            currentSub.updated_at = new Date();
+
+            await queryRunner.manager.save(currentSub);
+
+            // Update user profile immediately
+            await queryRunner.manager.update(User, userId, {
+                subscription_tier: UserSubscriptionTier.FREE,
+                subscription_end_date: new Date()
+            });
+
+            await queryRunner.commitTransaction();
+
+            return {
+                message: 'Đã huỷ gia hạn thành công.',
+                end_date: currentSub.end_date,
+                cancellation_date: currentSub.updated_at
+            };
+
+        } catch (err) {
+            await queryRunner.rollbackTransaction();
+            throw err;
+        } finally {
+            await queryRunner.release();
+        }
     }
 
     /**

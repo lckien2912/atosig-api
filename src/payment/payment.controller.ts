@@ -59,8 +59,7 @@ export class PaymentController {
     @Post('momo/ipn')
     @ApiOperation({ summary: 'Webhook xử lý kết quả MOMO' })
     async momoIpn(@Body() body: any) {
-        await this.paymentService.processPaymentCallback(PaymentGateway.MOMO, body);
-        return { message: 'IPN Received' };
+        return this.paymentService.processPaymentCallback(PaymentGateway.MOMO, body);
     }
 
     @Get('momo/return')
