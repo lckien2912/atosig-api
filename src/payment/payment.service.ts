@@ -100,7 +100,7 @@ export class PaymentService {
 
             if (secureHash !== signed) {
                 this.logger.error('VNPAY Checksum Failed');
-                return { RspCode: '97', Message: 'Checksum failed' };
+                return this.createIpnResponse(PaymentStatus.FAILED, 'VNPAY signature validation failed');
             }
 
             txnCode = vnp_Params['vnp_TxnRef'];
@@ -120,12 +120,12 @@ export class PaymentService {
 
             if (signature !== checkSignature) {
                 this.logger.error('Momo Checksum Failed');
-                return { status: 400, message: 'Invalid Signature' };
+                return this.createIpnResponse(PaymentStatus.FAILED, 'MOMO signature validation failed');
             }
 
             txnCode = orderId;
             gatewayTxnId = transId.toString();
-            isSuccess = resultCode === 0;
+            isSuccess = Number(resultCode) === 0;
 
         } else if (gateway === PaymentGateway.MANUAL) {
             txnCode = data.code;
@@ -223,13 +223,11 @@ export class PaymentService {
         const transaction = await this.paymentRepo.findOne({ where: { transaction_code: txnCode } });
 
         if (!transaction) {
-            if (gateway === PaymentGateway.VNPAY) return { RspCode: '01', Message: 'Order not found' };
-            throw new NotFoundException('Transaction not found');
+            return this.createIpnResponse(PaymentStatus.FAILED, 'Transaction not found');
         }
 
         if (transaction.status === PaymentStatus.SUCCESS && isSuccess) {
-            if (gateway === PaymentGateway.VNPAY) return { RspCode: '00', Message: 'Confirm Success' };
-            return { message: 'Already processed' };
+            return this.createIpnResponse(PaymentStatus.SUCCESS, 'Transaction already processed');
         }
 
         const queryRunner = this.dataSource.createQueryRunner();
@@ -279,19 +277,18 @@ export class PaymentService {
 
             await queryRunner.commitTransaction();
 
-            if (gateway === PaymentGateway.VNPAY) return { RspCode: '00', Message: 'Confirm Success' };
-
-            return {
-                message: 'IPN Processed',
-                status: isSuccess ? 'SUCCESS' : 'FAILED',
-                gateway_response: isSuccess ? 'Payment Success' : 'Payment Failed/Cancelled'
-            };
+            return this.createIpnResponse(
+                isSuccess ? PaymentStatus.SUCCESS : PaymentStatus.FAILED,
+                isSuccess ? 'Payment Success' : 'Payment Failed/Cancelled'
+            );
 
         } catch (err) {
             await queryRunner.rollbackTransaction();
             this.logger.error('Error processing payment callback', err);
-            if (gateway === PaymentGateway.VNPAY) return { RspCode: '99', Message: 'Unknow error' };
-            throw err;
+            return this.createIpnResponse(
+                PaymentStatus.FAILED,
+                `Error processing transaction: ${err.message || 'Unknown error'}`
+            );
         } finally {
             await queryRunner.release();
         }
@@ -352,5 +349,15 @@ export class PaymentService {
         }
     }
 
+    private createIpnResponse(
+        status: PaymentStatus,
+        gatewayResponse: string
+    ): { message: string; status: string; gateway_response: string } {
+        return {
+            message: 'IPN Processed',
+            status,
+            gateway_response: gatewayResponse
+        };
+    }
 
 }
