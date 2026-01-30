@@ -260,7 +260,7 @@ export class AuthService {
 
     async forgotPassword(dto: ForgotPasswordDto) {
         const user = await this.userRepository.findOne({ where: { email: dto.email } });
-        if (!user) throw new BadRequestException('Email không hợp lệ');
+        if (!user) throw new BadRequestException('Email không tồn tại');
 
         await this.generateAndSendOtp(
             dto.email,
@@ -279,7 +279,7 @@ export class AuthService {
             where: { email: dto.email, code: dto.code }
         });
 
-        if (!record) throw new BadRequestException('Mã xác thực không đúng hoặc email sai');
+        if (!record) throw new BadRequestException('Mã xác thực không đúng');
         if (new Date() > record.expires_at) {
             await this.verifyRepo.delete({ id: record.id });
             throw new BadRequestException('Mã xác thực đã hết hạn');
