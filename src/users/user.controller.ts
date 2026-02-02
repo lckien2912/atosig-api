@@ -48,7 +48,7 @@ export class UsersController {
 
     @Delete(':id')
     @UseGuards(JwtAuthGuard, RolesGuard)
-    @ApiOperation({ summary: '[ADMIN] Xóa tài khoản user' })
+    @ApiOperation({ summary: '[ADMIN] Khóa tài khoản user' })
     @ApiBearerAuth('access-token')
     remove(@Param('id') id: string) {
         return this.usersService.deactivate(id);
@@ -56,7 +56,7 @@ export class UsersController {
 
     @Patch(':id/restore')
     @UseGuards(JwtAuthGuard, RolesGuard)
-    @ApiOperation({ summary: '[ADMIN] Khôi phục tài khoản user' })
+    @ApiOperation({ summary: '[ADMIN] Mở khóa tài khoản user' })
     @ApiBearerAuth('access-token')
     restore(@Param('id') id: string) {
         return this.usersService.restore(id);

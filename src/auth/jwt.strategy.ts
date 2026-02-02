@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
@@ -20,7 +20,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     async validate(payload: any) {
-        const user = await this.userRepository.findOne({ where: { id: payload.sub }, select: ['id', 'email', 'role', 'subscription_tier'] });
+        const user = await this.userRepository.findOne({ where: { id: payload.sub }, select: ['id', 'email', 'role', 'subscription_tier', 'is_active'] });
+
+        if (user && !user.is_active) throw new UnauthorizedException('Tài khoản đã bị khóa');
 
         return user;
     }

@@ -134,10 +134,12 @@ export class AuthService {
     async login(loginDto: LoginDto) {
         const user = await this.userRepository.findOne({
             where: { email: loginDto.email },
-            select: ['id', 'email', 'password', 'role', 'full_name', 'subscription_tier']
+            select: ['id', 'email', 'password', 'role', 'full_name', 'subscription_tier', 'is_active']
         });
 
         if (!user) throw new BadRequestException('Tài khoản không tồn tại');
+
+        if (!user.is_active) throw new UnauthorizedException('Tài khoản đã bị khóa');
 
         const pass = user.password || '';
 
@@ -260,7 +262,7 @@ export class AuthService {
 
     async forgotPassword(dto: ForgotPasswordDto) {
         const user = await this.userRepository.findOne({ where: { email: dto.email } });
-        if (!user) throw new BadRequestException('Email không hợp lệ');
+        if (!user) throw new BadRequestException('Email không tồn tại');
 
         await this.generateAndSendOtp(
             dto.email,
@@ -279,7 +281,7 @@ export class AuthService {
             where: { email: dto.email, code: dto.code }
         });
 
-        if (!record) throw new BadRequestException('Mã xác thực không đúng hoặc email sai');
+        if (!record) throw new BadRequestException('Mã xác thực không đúng');
         if (new Date() > record.expires_at) {
             await this.verifyRepo.delete({ id: record.id });
             throw new BadRequestException('Mã xác thực đã hết hạn');
