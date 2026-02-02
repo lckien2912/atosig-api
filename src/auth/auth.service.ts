@@ -134,10 +134,12 @@ export class AuthService {
     async login(loginDto: LoginDto) {
         const user = await this.userRepository.findOne({
             where: { email: loginDto.email },
-            select: ['id', 'email', 'password', 'role', 'full_name', 'subscription_tier']
+            select: ['id', 'email', 'password', 'role', 'full_name', 'subscription_tier', 'is_active']
         });
 
         if (!user) throw new BadRequestException('Tài khoản không tồn tại');
+
+        if (!user.is_active) throw new UnauthorizedException('Tài khoản đã bị khóa');
 
         const pass = user.password || '';
 
