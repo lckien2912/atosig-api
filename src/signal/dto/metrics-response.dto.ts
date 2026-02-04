@@ -7,15 +7,18 @@ export class MetricsResponseDto {
     @ApiProperty({ description: 'Lợi nhuận trung bình mỗi lệnh (%)', example: 5.8 })
     avgProfit: number;
 
-    @ApiProperty({ description: 'Hệ số lợi nhuận (Gross Profit / Gross Loss)', example: 2.05 })
-    profitFactor: number;
-
     @ApiProperty({ description: 'Tổng số tín hiệu', example: 452 })
     totalSignals: number;
 
-    @ApiProperty({ description: 'Thời gian nắm giữ trung bình (giờ hoặc chuỗi text)', example: '7 ngày' })
-    avgHoldingTime: string;
+    @ApiProperty({ description: 'Thời gian nắm giữ trung bình', example: 7 })
+    avgHoldingTime: number;
 
-    @ApiProperty({ description: 'Mức sụt giảm tối đa (Dựa trên Max StopLoss %)', example: -7.5 })
-    maxStopLossPct: number;
+    @ApiProperty({ description: 'Mức sụt giảm tối đa (% chênh lệch giữa actualEfficiency cao nhất và thấp nhất)', example: -7.5 })
+    maxDrawdown: number;
+
+    @ApiProperty({ description: 'Lợi nhuận tối đa', example: 10.5 })
+    maxProfit: number;
+
+    @ApiProperty({ description: 'Lợi nhuận tối thiểu', example: -10.5 })
+    minProfit: number;
 }
