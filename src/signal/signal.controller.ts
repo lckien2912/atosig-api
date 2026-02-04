@@ -2,6 +2,9 @@ import { Controller, Get, Param, Query, UseGuards, UseInterceptors, Request, Pos
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
 import { SignalService } from "./signal.service";
 import { CreateSignalDto } from "./dto/create-signal.dto";
+import { MetricsFilterDto } from "./dto/metrics-filter.dto";
+import { ProfitFactorFilterDto } from "./dto/profit-factor-filter.dto";
+import { SignalListFilterDto } from "./dto/signal-list-filter.dto";
 import { TransformInterceptor } from "../common/interceptors/transform.interceptor";
 import { OptionalJwtAuthGuard } from "src/auth/guards/optional-jwt-auth.guard";
 import { JwtAuthGuard } from "src/auth/guards/jwt-auth.guard";
@@ -19,11 +22,15 @@ export class SignalController {
     @ApiOperation({ summary: 'Lấy danh sách tín hiệu (Khách xem che, User xem full)' })
     findAll(
         @Request() req,
-        @Query("page") page: number = 1,
-        @Query("limit") limit: number = 10,
-        @Query("duration") duration?: string,
+        @Query() filter: SignalListFilterDto,
     ) {
-        return this.signalService.findAll({ page, limit, duration, currentUser: req.user });
+        return this.signalService.findAll({ 
+            page: filter.page || 1, 
+            limit: filter.limit || 10, 
+            startDate: filter.startDate,
+            endDate: filter.endDate,
+            currentUser: req.user 
+        });
     }
 
     @Get('watchlist')
@@ -42,8 +49,19 @@ export class SignalController {
     @UseGuards(OptionalJwtAuthGuard)
     @ApiBearerAuth()
     @ApiOperation({ summary: 'Lấy các chỉ số thống kê hiệu suất (Metrics Dashboard)' })
-    async getMetrics() {
-        return this.signalService.geTradingMetrics();
+    @ApiQuery({ name: 'startDate', required: false, example: '2026-01-01' })
+    @ApiQuery({ name: 'endDate', required: false, example: '2026-12-31' })
+    async getMetrics(@Query() filter: MetricsFilterDto) {
+        return this.signalService.getTradingMetrics(filter);
+    }
+
+    @Get('profit-factor')
+    @UseGuards(OptionalJwtAuthGuard)
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Lấy Profit Factor theo từng tháng (Chart Data)' })
+    @ApiQuery({ name: 'year', required: false, example: 2026 })
+    async getProfitFactor(@Query() filter: ProfitFactorFilterDto) {
+        return this.signalService.getProfitFactor(filter);
     }
 
     @Get(":id")

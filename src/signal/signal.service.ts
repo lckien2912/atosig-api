@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, In } from "typeorm";
+import { Repository } from "typeorm";
 import { Signal } from "./entities/signal.entity";
 import { SignalResponseDto } from "./dto/signal-response.dto";
 import { CreateSignalDto } from "./dto/create-signal.dto";
@@ -10,8 +10,10 @@ import { UserFavorite } from "./entities/user-favorite.entity";
 import { User } from "src/users/entities/user.entity";
 import { UserSubscriptionTier } from "src/users/enums/user-status.enum";
 import { MetricsResponseDto } from "./dto/metrics-response.dto";
-import path from "path";
-import * as fs from 'fs';
+import { MetricsFilterDto } from "./dto/metrics-filter.dto";
+import { ProfitFactorFilterDto } from "./dto/profit-factor-filter.dto";
+import { ProfitFactorResponseDto, MonthlyProfitFactorDto } from "./dto/profit-factor-response.dto";
+import { SignalListFilterDto } from "./dto/signal-list-filter.dto";
 
 @Injectable()
 export class SignalService {
@@ -20,19 +22,17 @@ export class SignalService {
         @InjectRepository(UserFavorite) private favoriteRepository: Repository<UserFavorite>,
     ) { }
 
-    async findAll(query: { page: number; limit: number; duration?: string, currentUser?: User }) {
-        const { page, limit, duration, currentUser } = query;
+    async findAll(query: SignalListFilterDto & { currentUser?: User }) {
+        const { page = 1, limit = 10, startDate, endDate, currentUser } = query;
         const skip = (page - 1) * limit;
 
         const queryBuilder = this.signalsRepository.createQueryBuilder("signal");
 
-        if (duration) {
-            const now = moment();
-            if (duration === "1M") {
-                queryBuilder.where("signal.created_at >= :fromDate", { fromDate: now.subtract(1, 'months').toDate() });
-            } else if (duration === "3M") {
-                queryBuilder.where("signal.created_at >= :fromDate", { fromDate: now.subtract(3, 'months').toDate() });
-            }
+        if (startDate) {
+            queryBuilder.andWhere("signal.signal_date >= :startDate", { startDate });
+        }
+        if (endDate) {
+            queryBuilder.andWhere("signal.signal_date <= :endDate", { endDate });
         }
 
         // Sort: Active/Pending first, then Closed
@@ -82,56 +82,190 @@ export class SignalService {
         };
     }
 
-    async geTradingMetrics(): Promise<MetricsResponseDto> {
-        let backtestData: any = {};
-
-        try {
-            const filePath = path.join(process.cwd(), 'backtest_summary.json');
-
-            if (fs.existsSync(filePath)) {
-                const fileContent = fs.readFileSync(filePath, 'utf-8');
-                const json = JSON.parse(fileContent);
-                backtestData = json['Top1'] || {};
-            } else {
-                console.log('File backtest_summary.json not found');
-            }
-        } catch (error) {
-            console.log(error);
-        }
-
-        const winRate = (backtestData.win_rate || 0) * 100;
-        const profitFactor = backtestData.profit_factor || 0;
-        const avgProfitPerTrade = (backtestData.avg_return || 0) * 100;
-
+    async getTradingMetrics(filter: MetricsFilterDto): Promise<MetricsResponseDto> {
         const queryBuilder = this.signalsRepository.createQueryBuilder('signal');
 
-        const totalSignals = await queryBuilder.getCount();
+        if (filter.startDate) {
+            queryBuilder.andWhere('signal.signal_date >= :startDate', { startDate: filter.startDate });
+        }
+        if (filter.endDate) {
+            queryBuilder.andWhere('signal.signal_date <= :endDate', { endDate: filter.endDate });
+        }
 
-        const { maxDrawdownVal } = await queryBuilder
-            .select('MAX(((signal.entry_price_min - signal.stop_loss_price) / signal.entry_price_min) * 100)', 'maxDrawdownVal')
-            .where('signal.entry_price_min > 0')
-            .getRawOne();
+        const signals = await queryBuilder.getMany();
+        const totalSignals = signals.length;
 
-        const { avgHoldingSeconds } = await queryBuilder
-            .select('AVG(EXTRACT(EPOCH FROM (signal.holding_period::timestamp - signal.entry_date::timestamp)))', 'avgHoldingSeconds')
-            .where('signal.holding_period IS NOT NULL')
-            .andWhere('signal.entry_date IS NOT NULL')
-            .getRawOne();
+        if (totalSignals === 0) {
+            return {
+                winRate: 0,
+                avgProfit: 0,
+                totalSignals: 0,
+                avgHoldingTime: 0,
+                maxDrawdown: 0,
+                maxProfit: 0,
+                minProfit: 0,
+            };
+        }
 
-        const avgHoldingDays = avgHoldingSeconds ? parseFloat(avgHoldingSeconds) / 86400 : 0;
+        const efficiencies = signals.map(signal => this.calculateActualEfficiency(signal));
+        const maxProfit = Math.max(...efficiencies);
+        const minProfit = Math.min(...efficiencies);
+        const maxDrawdown = Math.min(...efficiencies, 0);
+        const profitableSignals = signals.filter(s => s.tp1_hit_at !== null).length;
+        const winRate = (profitableSignals / totalSignals) * 100;
+
+        const sumEfficiency = efficiencies.reduce((acc, val) => acc + val, 0);
+        const avgProfit = sumEfficiency / totalSignals;
+
+
+        const holdingDays = signals.map(signal => this.calculateHoldingDays(signal));
+        const avgHoldingTime = Math.round(holdingDays.reduce((acc, val) => acc + val, 0) / totalSignals);
 
         return {
             winRate: Number(winRate.toFixed(2)),
-            profitFactor: Number(profitFactor.toFixed(2)),
-            avgProfit: Number(avgProfitPerTrade.toFixed(2)),
-            // totalSignals: totalSignals,
-            totalSignals: 9,
-            // avgHoldingTime: Math.round(avgHoldingDays).toString(),
-            avgHoldingTime: '12',
-            // maxStopLossPct: maxDrawdownVal ? -Number(Number(maxDrawdownVal).toFixed(2)) : 0,
-            maxStopLossPct: 0.63
+            avgProfit: Number(avgProfit.toFixed(2)),
+            totalSignals,
+            avgHoldingTime,
+            maxDrawdown: Number(maxDrawdown.toFixed(2)),
+            maxProfit: Number(maxProfit.toFixed(2)),
+            minProfit: Number(minProfit.toFixed(2)),
         };
     }
+
+    private calculateEntryAvg = (signal: Signal): number => {
+        const entryMin = Number(signal.entry_price_min);
+        const entryMax = Number(signal.entry_price_max || signal.entry_price_min);
+        return (entryMin + entryMax) / 2;
+    };
+
+    private calculateTPPercentages = (signal: Signal, entryAvg: number) => {
+        const tp1 = Number(signal.tp1_price);
+        const tp2 = Number(signal.tp2_price);
+        const tp3 = Number(signal.tp3_price);
+        return {
+            tp1_pct: entryAvg > 0 ? ((tp1 - entryAvg) / entryAvg) * 100 : 0,
+            tp2_pct: entryAvg > 0 ? ((tp2 - entryAvg) / entryAvg) * 100 : 0,
+            tp3_pct: entryAvg > 0 ? ((tp3 - entryAvg) / entryAvg) * 100 : 0,
+        };
+    };
+
+    private calculateActualEfficiency = (signal: Signal): number => {
+        const entryAvg = this.calculateEntryAvg(signal);
+        const marketPrice = signal.current_price ? Number(signal.current_price) : 0;
+
+        if (entryAvg === 0) return 0;
+
+        const { tp1_pct, tp2_pct, tp3_pct } = this.calculateTPPercentages(signal, entryAvg);
+        const tp1 = Number(signal.tp1_price);
+        const tp2 = Number(signal.tp2_price);
+        const tp3 = Number(signal.tp3_price);
+
+        // For CLOSED signals
+        if (signal.status === SignalStatus.CLOSED) {
+            if (signal.tp3_hit_at) return tp3_pct;
+            if (signal.tp2_hit_at) return tp2_pct;
+            if (signal.tp1_hit_at) return tp1_pct;
+            return ((marketPrice - entryAvg) / entryAvg) * 100;
+        }
+
+        // For ACTIVE/PENDING signals - use current market price
+        // But respect TP hits that already happened
+        if (marketPrice < tp3 && signal.tp3_hit_at) return tp3_pct;
+        if (marketPrice < tp2 && signal.tp2_hit_at) return tp2_pct;
+        if (marketPrice < tp1 && signal.tp1_hit_at) return tp1_pct;
+        return ((marketPrice - entryAvg) / entryAvg) * 100;
+    };
+
+    private calculateHoldingDays = (signal: Signal): number => {
+        const startDate = signal.signal_date
+            ? moment(signal.signal_date)
+            : moment(signal.created_at);
+            const endDate = moment(signal.holding_period)
+        return Math.ceil(endDate.diff(startDate, 'days', true));
+    };
+
+    /**
+     * Get Profit Factor metrics with monthly chart data
+     * PF = Sum(positive actualEfficiency) / Sum(abs(negative actualEfficiency))
+     */
+    async getProfitFactor(filter: ProfitFactorFilterDto): Promise<ProfitFactorResponseDto> {
+        const year = filter.year || moment().year();
+
+        const startOfYear = moment().year(year).month(0).date(1).startOf('day').toDate();
+        const endOfYear = moment().year(year).month(11).date(31).endOf('day').toDate();
+
+        const signals = await this.signalsRepository.createQueryBuilder('signal')
+            .where('signal.signal_date >= :startOfYear', { startOfYear })
+            .andWhere('signal.signal_date <= :endOfYear', { endOfYear })
+            .getMany();
+
+        const monthlySignals = this.groupSignalsByMonth(signals, year);
+
+        const monthlyData: MonthlyProfitFactorDto[] = [];
+        let latestMonthWithData: MonthlyProfitFactorDto | null = null;
+
+        for (let month = 1; month <= 12; month++) {
+            const monthKey = `${month.toString().padStart(2, '0')}-${year}`;
+            const monthSignals = monthlySignals.get(monthKey) || [];
+
+            const efficiencies = monthSignals.map(s => this.calculateActualEfficiency(s));
+
+            const grossProfit = efficiencies
+                .filter(e => e > 0)
+                .reduce((acc, val) => acc + val, 0);
+
+            const grossLoss = efficiencies
+                .filter(e => e < 0)
+                .reduce((acc, val) => acc + Math.abs(val), 0);
+
+            const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : (grossProfit > 0 ? grossProfit : 0);
+
+            const monthData: MonthlyProfitFactorDto = {
+                month: monthKey,
+                profitFactor: Number(profitFactor.toFixed(2)),
+                grossProfit: Number(grossProfit.toFixed(2)),
+                grossLoss: Number(grossLoss.toFixed(2))
+            };
+
+            monthlyData.push(monthData);
+
+            if (monthSignals.length > 0) {
+                latestMonthWithData = monthData;
+            }
+        }
+
+        const highlightedPF = latestMonthWithData?.profitFactor || 0;
+
+        return {
+            profitFactor: highlightedPF,
+            monthlyData
+        };
+    }
+
+    private groupSignalsByMonth = (signals: Signal[], year: number): Map<string, Signal[]> => {
+        const map = new Map<string, Signal[]>();
+
+        // Initialize all 12 months
+        for (let m = 1; m <= 12; m++) {
+            const key = `${m.toString().padStart(2, '0')}-${year}`;
+            map.set(key, []);
+        }
+
+        // Group signals
+        signals.forEach(signal => {
+            const signalDate = signal.signal_date
+                ? moment(signal.signal_date)
+                : moment(signal.created_at);
+            if (signalDate.year() === year) {
+                const key = `${(signalDate.month() + 1).toString().padStart(2, '0')}-${year}`;
+                const existing = map.get(key) || [];
+                existing.push(signal);
+                map.set(key, existing);
+            }
+        });
+
+        return map;
+    };
 
     async findOne(id: string, currentUser?: any) {
         const signal = await this.signalsRepository.findOne({
@@ -160,7 +294,7 @@ export class SignalService {
 
         const entryMin = Number(signal.entry_price_min);
         const entryMax = Number(signal.entry_price_max || signal.entry_price_min);
-        const entryAvg = (entryMin + entryMax) / 2;
+        const entryAvg = this.calculateEntryAvg(signal);
 
         const marketPrice = signal.current_price ? Number(signal.current_price) : 0;
 
@@ -168,39 +302,17 @@ export class SignalService {
         const tp2 = Number(signal.tp2_price);
         const tp3 = Number(signal.tp3_price);
         const sl = Number(signal.stop_loss_price);
-        const tp1_pct = ((tp1 - entryAvg) / entryAvg) * 100;
-        const tp2_pct = ((tp2 - entryAvg) / entryAvg) * 100;
-        const tp3_pct = ((tp3 - entryAvg) / entryAvg) * 100;
 
         // 1. Lãi kỳ vọng
         // Formula: (Tp3_price - AVG(entry_price))/AVG(entry_price) x 100%
-        let expectedProfit = 0;
-        if (entryAvg > 0) {
-            expectedProfit = ((tp3 - entryAvg) / entryAvg) * 100;
-        }
+        const expectedProfit = entryAvg > 0 ? ((tp3 - entryAvg) / entryAvg) * 100 : 0;
 
-        // 2. Hiệu quả tạm tính
-        let actualEfficiency = 0;
-        if (entryAvg > 0) {
-            const getClosedSignalEfficiency = () => {
-                if (signal.tp3_hit_at) return tp3_pct || 0;
-                if (signal.tp2_hit_at) return tp2_pct || 0;
-                if (signal.tp1_hit_at) return tp1_pct || 0;
-                return ((marketPrice - entryAvg) / entryAvg) * 100;
-            };
-            const getOpenSignalEfficiency = () => {
-                if (marketPrice < tp3 && signal.tp3_hit_at) return tp3_pct || 0;
-                if (marketPrice < tp2 && signal.tp2_hit_at) return tp2_pct || 0;
-                if (marketPrice < tp1 && signal.tp1_hit_at) return tp1_pct || 0;
-                return ((marketPrice - entryAvg) / entryAvg) * 100;
-            };
-            actualEfficiency = signal.status === SignalStatus.CLOSED ? getClosedSignalEfficiency() : getOpenSignalEfficiency();
-        }
+        const actualEfficiency = this.calculateActualEfficiency(signal);
 
         // Handle status
         let statusCode = SignalDisplayStatus.BUY_ZONE;
-        const now = new Date();
-        const holdDate = signal.holding_period ? new Date(signal.holding_period) : null;
+        const now = moment();
+        const holdDate = signal.holding_period ? moment(signal.holding_period) : null;
         let closeTime: Date | null = null;
 
         if (marketPrice <= sl) {
@@ -215,9 +327,9 @@ export class SignalService {
         } else if (marketPrice >= tp1) {
             statusCode = SignalDisplayStatus.TAKE_PROFIT_1;
             closeTime = signal.tp1_hit_at || null;
-        } else if (holdDate && now > holdDate) {
+        } else if (holdDate && now.isAfter(holdDate)) {
             statusCode = SignalDisplayStatus.EXPIRED;
-            closeTime = holdDate;
+            closeTime = holdDate.toDate();
         } else {
             statusCode = SignalDisplayStatus.BUY_ZONE;
             closeTime = null;
@@ -225,11 +337,12 @@ export class SignalService {
 
         // Handle holding time
         let holdingTimeText = 'N/A';
-        const startDate = signal.signal_date ? new Date(signal.signal_date) : new Date(signal.created_at);
+        const startDate = signal.signal_date
+            ? moment(signal.signal_date)
+            : moment(signal.created_at);
 
         if (holdDate && startDate) {
-            const diffTime = Math.abs(holdDate.getTime() - startDate.getTime());
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            const diffDays = Math.ceil(holdDate.diff(startDate, 'days', true));
 
             if (diffDays >= 7) {
                 const weeks = Math.round(diffDays / 7);
@@ -246,7 +359,7 @@ export class SignalService {
             price_base: isLocked ? null : signal.price_base,
             current_price: isLocked ? null : marketPrice,
             current_change_percent: isLocked ? null : signal.current_change_percent,
-            signal_date: startDate,
+            signal_date: startDate.toDate(),
             status: signal.status,
             status_code: statusCode,
             expected_profit: expectedProfit,

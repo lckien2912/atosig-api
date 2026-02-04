@@ -1,31 +1,23 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { IsOptional, IsString } from "class-validator";
+import { IsOptional, IsDate } from "class-validator";
+import { Type } from "class-transformer";
 
 export class MetricsFilterDto {
     @ApiProperty({
         required: false,
-        description: 'Khoảng thời gian (VD: 1M, 3M, 6M, 1Y, YTD, ALL)',
-        example: '1M'
+        example: '2026-01-01'
     })
     @IsOptional()
-    @IsString()
-    duration?: string;
+    @Type(() => Date)
+    @IsDate()
+    startDate?: Date;
 
     @ApiProperty({
         required: false,
-        description: 'Ngày bắt đầu',
-        example: '01/01/2026'
+        example: '2026-12-31'
     })
     @IsOptional()
-    @IsString()
-    from?: string;
-
-    @ApiProperty({
-        required: false,
-        description: 'Ngày kết thúc',
-        example: '01/01/2026'
-    })
-    @IsOptional()
-    @IsString()
-    to?: string;
+    @Type(() => Date)
+    @IsDate()
+    endDate?: Date;
 }

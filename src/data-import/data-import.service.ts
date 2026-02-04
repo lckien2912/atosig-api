@@ -165,7 +165,7 @@ export class DataImportService {
         signal.signal_date = this.parseDate(row.signal_date);
 
         if (signal.signal_date) {
-            signal.holding_period = moment(signal.signal_date).add(10, 'days').toDate();
+            signal.holding_period = moment(signal.signal_date).add(15, 'days').toDate();
         }
 
         signal.entry_date = this.parseDate(row.entry_date);
