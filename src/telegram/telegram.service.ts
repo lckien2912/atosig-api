@@ -118,7 +118,7 @@ export class TelegramService {
                 `<b>Signal date:</b> ${moment(signal.signal_date).format('YYYY-MM-DD')}`,
                 `<b>Time:</b> ${moment(signal.created_at).format('HH:mm')}`,
                 `<b>${signal.symbol}</b> (${signal.exchange})`,
-                `<b>Entry:</b> ${fmt(entry)}`,
+                `<b>Entry:</b> ${fmt(Number(signal.entry_price_min))} - ${fmt(Number(signal.entry_price_max))}`,
                 `<b>SL:</b> ${fmt(sl)} (${calcPct(sl)})`,
                 `<b>TP1:</b> ${fmt(tp1)} (${calcPct(tp1)})`,
                 `<b>TP2:</b> ${fmt(tp2)} (${calcPct(tp2)})`,
