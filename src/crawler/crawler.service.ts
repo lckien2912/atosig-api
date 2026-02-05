@@ -72,7 +72,7 @@ export class CrawlerService {
         }
     }
 
-    @Cron(CronExpression.EVERY_MINUTE)
+    @Cron('0 20 * * *')
     async scanForNewSignal() {
         if (this.isJobRunning) {
             this.logger.warn('⚠️ Previous scan job is still running. Skipping this tick.');
@@ -86,7 +86,7 @@ export class CrawlerService {
                     is_notified: false,
                     status: In([SignalStatus.ACTIVE, SignalStatus.PENDING])
                 },
-                take: 5,
+                take: 50,
                 order: { created_at: 'ASC' }
             });
 
