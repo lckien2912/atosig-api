@@ -54,6 +54,18 @@ export class SignalResponseDto {
   tp1: number | null;
 
   @ApiProperty({ example: 38.5, nullable: true })
+  tp1_pct: number | null;
+
+  @ApiProperty({ example: 38.5, nullable: true })
+  tp2_pct: number | null;
+
+  @ApiProperty({ example: 38.5, nullable: true })
+  tp3_pct: number | null;
+
+  @ApiProperty({ example: 38.5, nullable: true })
+  stop_loss_pct: number | null;
+
+  @ApiProperty({ example: 38.5, nullable: true })
   tp2: number | null;
 
   @ApiProperty({ example: 38.5, nullable: true })

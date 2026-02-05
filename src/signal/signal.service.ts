@@ -94,6 +94,8 @@ export class SignalService {
 
         const signals = await queryBuilder.getMany();
         const totalSignals = signals.length;
+        const closedSignals = signals.filter(signal => signal.status === SignalStatus.CLOSED);
+        const totalClosedSignals = closedSignals.length;
 
         if (totalSignals === 0) {
             return {
@@ -107,15 +109,15 @@ export class SignalService {
             };
         }
 
-        const efficiencies = signals.map(signal => this.calculateActualEfficiency(signal));
+        const efficiencies = closedSignals.map(signal => this.calculateActualEfficiency(signal));
         const maxProfit = Math.max(...efficiencies);
         const minProfit = Math.min(...efficiencies);
         const maxDrawdown = Math.min(...efficiencies, 0);
-        const profitableSignals = signals.filter(s => s.tp1_hit_at !== null).length;
-        const winRate = (profitableSignals / totalSignals) * 100;
+        const profitableSignals = closedSignals.filter(s => s.tp1_hit_at !== null).length;
+        const winRate = (profitableSignals / totalClosedSignals) * 100;
 
         const sumEfficiency = efficiencies.reduce((acc, val) => acc + val, 0);
-        const avgProfit = sumEfficiency / totalSignals;
+        const avgProfit = sumEfficiency / totalClosedSignals;
 
 
         const holdingDays = signals.map(signal => this.calculateHoldingDays(signal));
@@ -138,14 +140,16 @@ export class SignalService {
         return (entryMin + entryMax) / 2;
     };
 
-    private calculateTPPercentages = (signal: Signal, entryAvg: number) => {
+    private calculatePercentages = (signal: Signal, entryAvg: number) => {
         const tp1 = Number(signal.tp1_price);
         const tp2 = Number(signal.tp2_price);
         const tp3 = Number(signal.tp3_price);
+        const sl = Number(signal.stop_loss_price);
         return {
             tp1_pct: entryAvg > 0 ? ((tp1 - entryAvg) / entryAvg) * 100 : 0,
             tp2_pct: entryAvg > 0 ? ((tp2 - entryAvg) / entryAvg) * 100 : 0,
             tp3_pct: entryAvg > 0 ? ((tp3 - entryAvg) / entryAvg) * 100 : 0,
+            sl_pct: entryAvg > 0 ? ((entryAvg - sl) / entryAvg) * 100 : 0,
         };
     };
 
@@ -155,16 +159,18 @@ export class SignalService {
 
         if (entryAvg === 0) return 0;
 
-        const { tp1_pct, tp2_pct, tp3_pct } = this.calculateTPPercentages(signal, entryAvg);
+        const { tp1_pct, tp2_pct, tp3_pct, sl_pct } = this.calculatePercentages(signal, entryAvg);
         const tp1 = Number(signal.tp1_price);
         const tp2 = Number(signal.tp2_price);
         const tp3 = Number(signal.tp3_price);
+        const sl = Number(signal.stop_loss_price);
 
         // For CLOSED signals
         if (signal.status === SignalStatus.CLOSED) {
             if (signal.tp3_hit_at) return tp3_pct;
             if (signal.tp2_hit_at) return tp2_pct;
             if (signal.tp1_hit_at) return tp1_pct;
+            if (signal.sl_hit_at) return sl_pct;
             return ((marketPrice - entryAvg) / entryAvg) * 100;
         }
 
@@ -197,6 +203,7 @@ export class SignalService {
         const signals = await this.signalsRepository.createQueryBuilder('signal')
             .where('signal.signal_date >= :startOfYear', { startOfYear })
             .andWhere('signal.signal_date <= :endOfYear', { endOfYear })
+            .andWhere('signal.status = :status', { status: SignalStatus.CLOSED })
             .getMany();
 
         const monthlySignals = this.groupSignalsByMonth(signals, year);
@@ -308,9 +315,10 @@ export class SignalService {
         const expectedProfit = entryAvg > 0 ? ((tp3 - entryAvg) / entryAvg) * 100 : 0;
 
         const actualEfficiency = this.calculateActualEfficiency(signal);
+        const { tp1_pct, tp2_pct, tp3_pct, sl_pct } = this.calculatePercentages(signal, entryAvg);
 
         // Handle status
-        let statusCode = SignalDisplayStatus.BUY_ZONE;
+        let statusCode = 0;
         const now = moment();
         const holdDate = signal.holding_period ? moment(signal.holding_period) : null;
         let closeTime: Date | null = null;
@@ -330,7 +338,7 @@ export class SignalService {
         } else if (holdDate && now.isAfter(holdDate)) {
             statusCode = SignalDisplayStatus.EXPIRED;
             closeTime = holdDate.toDate();
-        } else {
+        } else if (marketPrice >= signal.entry_price_min && marketPrice <= signal.entry_price_max) {
             statusCode = SignalDisplayStatus.BUY_ZONE;
             closeTime = null;
         }
@@ -364,14 +372,18 @@ export class SignalService {
             status_code: statusCode,
             expected_profit: expectedProfit,
             actual_efficiency: actualEfficiency,
-            entry_price: isLocked ? null : entryMin,
+            entry_price: isLocked ? null : entryAvg,
             entry_price_min: isLocked ? null : entryMin,
             entry_price_max: isLocked ? null : entryMax,
             entry_zone: isLocked ? null : `${entryMin} - ${entryMax}`,
             tp1: isLocked ? null : tp1,
+            tp1_pct: isLocked ? null : tp1_pct,
             tp2: isLocked ? null : tp2,
+            tp2_pct: isLocked ? null : tp2_pct,
             tp3: isLocked ? null : tp3,
+            tp3_pct: isLocked ? null : tp3_pct,
             stop_loss_price: isLocked ? null : sl,
+            stop_loss_pct: isLocked ? null : sl_pct,
             is_expired: signal.is_expired,
             holding_time: isLocked ? null : holdingTimeText,
             is_favorited: isFavorited,

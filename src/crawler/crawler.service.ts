@@ -98,9 +98,11 @@ export class CrawlerService {
             this.logger.log(`Found ${newSignals.length} new signals to notify!`);
 
             for (const signal of newSignals) {
-                await this.telegramService.sendNewSignal(signal);
-                await this.signalRepository.update(signal.id, { is_notified: true });
-                await new Promise(r => setTimeout(r, 1000));
+                if (signal.current_price) {
+                    await this.telegramService.sendNewSignal(signal);
+                    await this.signalRepository.update(signal.id, { is_notified: true });
+                    await new Promise(r => setTimeout(r, 1000));
+                }
             }
 
         } catch (error) {
@@ -274,20 +276,25 @@ export class CrawlerService {
                 }
             }
 
+            if (profitList.length === 0 && lossList.length === 0) {
+                this.logger.log('No profit/loss to summarize.');
+                return;
+            }
+
             let message = `Summary of profit/loss to date (${todayStr}):\n`;
 
-            message += `💹\n`;
+            message += `💹 Profit signals: ${profitList.length}\n`;
             if (profitList.length > 0) {
                 message += profitList.join('\n') + '\n';
             } else {
-                message += '(None)\n';
+                message += '(No profit signals today)\n';
             }
 
-            message += `🛑\n`;
+            message += `🛑 Loss signals: ${lossList.length}\n`;
             if (lossList.length > 0) {
                 message += lossList.join('\n') + '\n';
             } else {
-                message += '(None)\n';
+                message += '(No loss signals today)\n';
             }
 
             message += `💹\n`;
