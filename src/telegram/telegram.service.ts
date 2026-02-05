@@ -51,6 +51,9 @@ export class TelegramService {
         try {
 
             const entry = Number(signal.entry_price_min);
+            const entryMax = Number(signal.entry_price_max);
+            const entryMin = Number(signal.entry_price_min);
+            const entryAvg = (entryMin + entryMax) / 2;
             const tp1Price = Number(signal.tp1_price);
             const isLong = tp1Price > entry;
             const tp1 = Number(signal.tp1_price);
@@ -58,7 +61,10 @@ export class TelegramService {
             const tp3 = Number(signal.tp3_price);
             const sl = Number(signal.stop_loss_price);
 
-            const fmt = (n: number) => new Intl.NumberFormat('en-US').format(n);
+            const fmt = (n: number) => Number(n / 1000).toLocaleString('en-US', {
+                maximumFractionDigits: 2,
+                minimumFractionDigits: 2,
+            });
 
             // const chart = new QuickChart();
             // chart.setWidth(500);
@@ -108,8 +114,8 @@ export class TelegramService {
                 if (!target) return '0.00%';
                 // Long: (Target - Entry) / Entry
                 // Short: (Entry - Target) / Entry
-                const diff = isLong ? (target - entry) : (entry - target);
-                const pct = (diff / entry) * 100;
+                const diff = isLong ? (target - entryAvg) : (entryAvg - target);
+                const pct = (diff / entryAvg) * 100;
                 const sign = pct > 0 ? '+' : '';
                 return `${sign}${pct.toFixed(2)}%`;
             };
@@ -118,7 +124,7 @@ export class TelegramService {
                 `<b>Signal date:</b> ${moment(signal.signal_date).format('YYYY-MM-DD')}`,
                 `<b>Time:</b> ${moment(signal.created_at).format('HH:mm')}`,
                 `<b>${signal.symbol}</b> (${signal.exchange})`,
-                `<b>Entry:</b> ${fmt(Number(signal.entry_price_min))} - ${fmt(Number(signal.entry_price_max))}`,
+                `<b>Entry:</b> ${fmt(entryMax)} - ${fmt(entryMax)}`,
                 `<b>SL:</b> ${fmt(sl)} (${calcPct(sl)})`,
                 `<b>TP1:</b> ${fmt(tp1)} (${calcPct(tp1)})`,
                 `<b>TP2:</b> ${fmt(tp2)} (${calcPct(tp2)})`,
