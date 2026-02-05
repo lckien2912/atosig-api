@@ -28,6 +28,7 @@ interface CsvRow {
     rr_tp3?: string;
     atr_pct?: string;
     recent_low?: string;
+    holding_period?: string;
 };
 
 interface CompanyCsvRow {
@@ -165,7 +166,7 @@ export class DataImportService {
         signal.signal_date = this.parseDate(row.signal_date);
 
         if (signal.signal_date) {
-            signal.holding_period = moment(signal.signal_date).add(15, 'days').toDate();
+            signal.holding_period = row.holding_period ? this.parseDate(row.holding_period) : moment(signal.signal_date).add(14, 'days').toDate();
         }
 
         signal.entry_date = this.parseDate(row.entry_date);
@@ -173,17 +174,18 @@ export class DataImportService {
 
         signal.entry_price_min = this.parseNumber(row.entry_price) || 0;
         signal.entry_price_max = this.parseNumber(row.entry_price);
+        const entryAvg = (signal.entry_price_min + signal.entry_price_max) / 2;
 
         signal.stop_loss_price = this.parseNumber(row.sl_price) || 0;
-        signal.stop_loss_pct = this.parseNumber(row.sl_pct) || 0;
+        signal.stop_loss_pct = ((signal.stop_loss_price - entryAvg) / entryAvg) * 100;
 
         signal.tp1_price = this.parseNumber(row.tp1_price) || 0;
         signal.tp2_price = this.parseNumber(row.tp2_price) || 0;
         signal.tp3_price = this.parseNumber(row.tp3_price) || 0;
 
-        signal.tp1_pct = this.parseNumber(row.tp1_pct);
-        signal.tp2_pct = this.parseNumber(row.tp2_pct);
-        signal.tp3_pct = this.parseNumber(row.tp3_pct);
+        signal.tp1_pct = ((signal.tp1_price - entryAvg) / entryAvg) * 100;
+        signal.tp2_pct = ((signal.tp2_price - entryAvg) / entryAvg) * 100;
+        signal.tp3_pct = ((signal.tp3_price - entryAvg) / entryAvg) * 100;
 
         signal.rr_tp1 = this.parseNumber(row.rr_tp1);
         signal.rr_tp2 = this.parseNumber(row.rr_tp2);

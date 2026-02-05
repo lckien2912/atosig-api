@@ -41,39 +41,19 @@ export class CreateSignalDto {
     @IsNumber()
     stop_loss_price: number;
 
-    @ApiProperty({ example: 5, required: false, description: 'Stop Loss %' })
-    @IsNumber()
-    @IsOptional()
-    sl_pct?: number;
-
     @ApiProperty({ example: 42000 })
     @IsNumber()
     tp1_price: number;
-
-    @ApiProperty({ example: 5, required: false, description: 'TP1 %' })
-    @IsNumber()
-    @IsOptional()
-    tp1_pct?: number;
 
     @ApiProperty({ example: 44000, required: false })
     @IsNumber()
     @IsOptional()
     tp2_price?: number;
 
-    @ApiProperty({ example: 10, required: false, description: 'TP2 %' })
-    @IsNumber()
-    @IsOptional()
-    tp2_pct?: number;
-
     @ApiProperty({ example: 46000, required: false })
     @IsNumber()
     @IsOptional()
     tp3_price?: number;
-
-    @ApiProperty({ example: 15, required: false, description: 'TP3 %' })
-    @IsNumber()
-    @IsOptional()
-    tp3_pct?: number;
 
     @ApiProperty({ example: 1.5, required: false, description: 'ATR % used for calculation' })
     @IsNumber()

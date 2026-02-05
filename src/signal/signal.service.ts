@@ -141,16 +141,13 @@ export class SignalService {
         return (entryMin + entryMax) / 2;
     };
 
-    private calculatePercentages = (signal: Signal, entryAvg: number) => {
-        const tp1 = Number(signal.tp1_price);
-        const tp2 = Number(signal.tp2_price);
-        const tp3 = Number(signal.tp3_price);
-        const sl = Number(signal.stop_loss_price);
+    private calculatePercentages = (data: {entryAvg: number, tp1: number, tp2: number, tp3: number, sl: number}) => {
+        const { entryAvg, tp1, tp2, tp3, sl } = data;
         return {
-            tp1_pct: entryAvg > 0 ? ((tp1 - entryAvg) / entryAvg) * 100 : 0,
-            tp2_pct: entryAvg > 0 ? ((tp2 - entryAvg) / entryAvg) * 100 : 0,
-            tp3_pct: entryAvg > 0 ? ((tp3 - entryAvg) / entryAvg) * 100 : 0,
-            sl_pct: entryAvg > 0 ? ((entryAvg - sl) / entryAvg) * 100 : 0,
+            tp1_pct: ((tp1 - entryAvg) / entryAvg) * 100,
+            tp2_pct: ((tp2 - entryAvg) / entryAvg) * 100,
+            tp3_pct: ((tp3 - entryAvg) / entryAvg) * 100,
+            sl_pct: ((sl - entryAvg) / entryAvg) * 100,
         };
     };
 
@@ -160,11 +157,13 @@ export class SignalService {
 
         if (entryAvg === 0) return 0;
 
-        const { tp1_pct, tp2_pct, tp3_pct, sl_pct } = this.calculatePercentages(signal, entryAvg);
         const tp1 = Number(signal.tp1_price);
         const tp2 = Number(signal.tp2_price);
         const tp3 = Number(signal.tp3_price);
-        const sl = Number(signal.stop_loss_price);
+        const tp1_pct = Number(signal.tp1_pct);
+        const tp2_pct = Number(signal.tp2_pct);
+        const tp3_pct = Number(signal.tp3_pct);
+        const sl_pct = Number(signal.stop_loss_pct);
 
         // For CLOSED signals
         if (signal.status === SignalStatus.CLOSED) {
@@ -313,10 +312,9 @@ export class SignalService {
 
         // 1. Lãi kỳ vọng
         // Formula: (Tp3_price - AVG(entry_price))/AVG(entry_price) x 100%
-        const expectedProfit = entryAvg > 0 ? ((tp3 - entryAvg) / entryAvg) * 100 : 0;
+        const expectedProfit = ((tp3 - entryAvg) / entryAvg) * 100;
 
         const actualEfficiency = this.calculateActualEfficiency(signal);
-        const { tp1_pct, tp2_pct, tp3_pct, sl_pct } = this.calculatePercentages(signal, entryAvg);
 
         // Handle status
         let statusCode = 0;
@@ -378,13 +376,13 @@ export class SignalService {
             entry_price_max: isLocked ? null : entryMax,
             entry_zone: isLocked ? null : `${entryMin} - ${entryMax}`,
             tp1: isLocked ? null : tp1,
-            tp1_pct: isLocked ? null : tp1_pct,
+            tp1_pct: isLocked ? null : Number(signal.tp1_pct),
             tp2: isLocked ? null : tp2,
-            tp2_pct: isLocked ? null : tp2_pct,
+            tp2_pct: isLocked ? null : Number(signal.tp2_pct),
             tp3: isLocked ? null : tp3,
-            tp3_pct: isLocked ? null : tp3_pct,
+            tp3_pct: isLocked ? null : Number(signal.tp3_pct),
             stop_loss_price: isLocked ? null : sl,
-            stop_loss_pct: isLocked ? null : sl_pct,
+            stop_loss_pct: isLocked ? null : Number(signal.stop_loss_pct),
             is_expired: signal.is_expired,
             holding_time: isLocked ? null : holdingTimeText,
             is_favorited: isFavorited,
@@ -515,15 +513,11 @@ export class SignalService {
         const tp2 = dto.tp2_price || 0;
         const tp3 = dto.tp3_price || 0;
 
-        const stop_loss_pct = dto.sl_pct || 0;
+        const { tp1_pct, tp2_pct, tp3_pct, sl_pct } = this.calculatePercentages({ entryAvg, tp1, tp2, tp3, sl });
 
-        const tp1_pct = dto.tp1_pct || 0;
-        const tp2_pct = dto.tp2_pct || 0;
-        const tp3_pct = dto.tp3_pct || 0;
-
-        const rr_tp1 = dto.tp1_pct || 0;
-        const rr_tp2 = dto.tp2_pct || 0;
-        const rr_tp3 = dto.tp3_pct || 0;
+        const rr_tp1 = tp1_pct || 0;
+        const rr_tp2 = tp2_pct || 0;
+        const rr_tp3 = tp3_pct || 0;
 
         const signal = this.signalsRepository.create({
             ...dto,
@@ -536,7 +530,7 @@ export class SignalService {
             tp1_price: tp1,
             tp2_price: tp2,
             tp3_price: tp3,
-            stop_loss_pct,
+            stop_loss_pct: sl_pct,
             tp1_pct,
             tp2_pct,
             tp3_pct,
@@ -563,10 +557,6 @@ export class SignalService {
         
         if (!signal) {
             throw new NotFoundException(`Không tìm thấy signal với id ${signalId}`);
-        }
-
-        if (signal.status !== SignalStatus.CLOSED) {
-            throw new BadRequestException('Chỉ có thể cập nhật signal đã đóng (CLOSED)');
         }
 
         const dateFields: Array<keyof UpdateSignalDto> = ['entry_date', 'signal_date', 'holding_period'];
