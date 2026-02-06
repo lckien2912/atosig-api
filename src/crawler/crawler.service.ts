@@ -385,7 +385,7 @@ export class CrawlerService {
                         }
 
                         // tính toán pnl để bắn tele có thể sửa lại theo công thức
-                        const entryPrice = Number(signal.entry_price_min);
+                        const entryPrice = (Number(signal.entry_price_min) + Number(signal.entry_price_max || signal.entry_price_min)) / 2;
                         let pnlPercent = ((currentPrice - entryPrice) / entryPrice) * 100;
                         const pnlFormatted = parseFloat(pnlPercent.toFixed(2));
 
