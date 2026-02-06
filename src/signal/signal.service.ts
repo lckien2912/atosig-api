@@ -1,14 +1,15 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Signal } from "./entities/signal.entity";
 import { SignalResponseDto } from "./dto/signal-response.dto";
 import { CreateSignalDto } from "./dto/create-signal.dto";
+import { UpdateSignalDto } from "./dto/update-signal.dto";
 import { SignalDisplayStatus, SignalStatus } from "./enums/signal-status.enum";
 import moment from "moment";
 import { UserFavorite } from "./entities/user-favorite.entity";
 import { User } from "src/users/entities/user.entity";
-import { UserSubscriptionTier } from "src/users/enums/user-status.enum";
+import { UserRole, UserSubscriptionTier } from "src/users/enums/user-status.enum";
 import { MetricsResponseDto } from "./dto/metrics-response.dto";
 import { MetricsFilterDto } from "./dto/metrics-filter.dto";
 import { ProfitFactorFilterDto } from "./dto/profit-factor-filter.dto";
@@ -551,5 +552,55 @@ export class SignalService {
         });
 
         return this.signalsRepository.save(signal);
+    }
+
+    async updateSignal(signalId: string, dto: UpdateSignalDto, currentUser: User) {
+        if (!currentUser || currentUser.role !== UserRole.ADMIN) {
+            throw new ForbiddenException('You are not authorized to update this signal');
+        }
+
+        const signal = await this.signalsRepository.findOne({ where: { id: signalId } });
+        
+        if (!signal) {
+            throw new NotFoundException(`Không tìm thấy signal với id ${signalId}`);
+        }
+
+        if (signal.status !== SignalStatus.CLOSED) {
+            throw new BadRequestException('Chỉ có thể cập nhật signal đã đóng (CLOSED)');
+        }
+
+        const dateFields: Array<keyof UpdateSignalDto> = ['entry_date', 'signal_date', 'holding_period'];
+        const nullableDateFields: Array<keyof UpdateSignalDto> = ['tp1_hit_at', 'tp2_hit_at', 'tp3_hit_at', 'sl_hit_at', 'closed_at'];
+        const simpleFields: Array<keyof UpdateSignalDto> = [
+            'symbol', 'exchange', 'entry_price_min', 'entry_price_max', 'price_base',
+            'stop_loss_price', 'stop_loss_pct', 'tp1_price', 'tp1_pct', 'tp2_price', 'tp2_pct',
+            'tp3_price', 'tp3_pct', 'atr_pct', 'current_price',
+            'current_change_percent', 'highest_price', 'is_premium', 'is_expired'
+        ];
+
+        simpleFields.forEach(field => {
+            if (dto[field] !== undefined) {
+                (signal as any)[field] = dto[field];
+            }
+        });
+
+        dateFields.forEach(field => {
+            if (dto[field] !== undefined) {
+                (signal as any)[field] = new Date(dto[field] as string);
+            }
+        });
+
+        nullableDateFields.forEach(field => {
+            if (dto[field] !== undefined) {
+                (signal as any)[field] = dto[field] ? new Date(dto[field] as string) : null;
+            }
+        });
+
+        const updatedSignal = await this.signalsRepository.save(signal);
+
+        return {
+            message: 'Cập nhật signal thành công',
+            data: updatedSignal
+        };
     }
 }
