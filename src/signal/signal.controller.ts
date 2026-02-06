@@ -1,7 +1,8 @@
-import { Controller, Get, Param, Query, UseGuards, UseInterceptors, Request, Post, Delete, Body } from "@nestjs/common";
+import { Controller, Get, Param, Query, UseGuards, UseInterceptors, Request, Post, Delete, Body, Patch } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
 import { SignalService } from "./signal.service";
 import { CreateSignalDto } from "./dto/create-signal.dto";
+import { UpdateSignalDto } from "./dto/update-signal.dto";
 import { MetricsFilterDto } from "./dto/metrics-filter.dto";
 import { ProfitFactorFilterDto } from "./dto/profit-factor-filter.dto";
 import { SignalListFilterDto } from "./dto/signal-list-filter.dto";
@@ -116,6 +117,18 @@ export class SignalController {
     @ApiOperation({ summary: '[ADMIN] Xem chi tiết tín hiệu' })
     async getDetailForAdmin(@Param('id') id: string) {
         return this.signalService.findOneForAdmin(id);
+    }
+
+    @Patch(':id')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @ApiBearerAuth('access-token')
+    @ApiOperation({ summary: '[ADMIN] Cập nhật tín hiệu (Chỉ cho phép cập nhật signal đã đóng - CLOSED)' })
+    updateSignal(
+        @Param('id') id: string,
+        @Body() updateSignalDto: UpdateSignalDto,
+        @Request() req,
+    ) {
+        return this.signalService.updateSignal(id, updateSignalDto, req.user);
     }
 
     @Delete(':id')
