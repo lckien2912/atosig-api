@@ -29,6 +29,8 @@ export class SignalService {
 
         const queryBuilder = this.signalsRepository.createQueryBuilder("signal");
 
+        queryBuilder.andWhere("signal.is_notified = :isNotified", { isNotified: true });
+
         if (startDate) {
             queryBuilder.andWhere("signal.signal_date >= :startDate", { startDate });
         }
@@ -321,17 +323,17 @@ export class SignalService {
         const now = moment();
         const holdDate = signal.holding_period ? moment(signal.holding_period) : null;
         let closeTime: Date | null = null;
-
-        if (marketPrice <= sl) {
+        
+        if (marketPrice <= sl && !!signal.sl_hit_at) {
             statusCode = SignalDisplayStatus.STOP_LOSS;
             closeTime = signal.sl_hit_at || null;
-        } else if (marketPrice >= tp3) {
+        } else if (marketPrice >= tp3 && !!signal.tp3_hit_at) {
             statusCode = SignalDisplayStatus.TAKE_PROFIT_3;
             closeTime = signal.tp3_hit_at || null;
-        } else if (marketPrice >= tp2) {
+        } else if (marketPrice >= tp2 && !!signal.tp2_hit_at) {
             statusCode = SignalDisplayStatus.TAKE_PROFIT_2;
             closeTime = signal.tp2_hit_at || null;
-        } else if (marketPrice >= tp1) {
+        } else if (marketPrice >= tp1 && !!signal.tp1_hit_at) {
             statusCode = SignalDisplayStatus.TAKE_PROFIT_1;
             closeTime = signal.tp1_hit_at || null;
         } else if (holdDate && now.isAfter(holdDate)) {

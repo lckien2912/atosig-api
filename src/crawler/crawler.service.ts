@@ -373,7 +373,7 @@ export class CrawlerService {
 
                         // T+2.5 Logic
                         const T_PLUS_2_5_MS = 2.5 * 24 * 60 * 60 * 1000;
-                        const timeSinceCreation = new Date().getTime() - new Date(signal.created_at).getTime();
+                        const timeSinceCreation = new Date().getTime() - new Date(signal.signal_date).getTime();
 
                         if (timeSinceCreation < T_PLUS_2_5_MS) {
                             await this.signalRepository.update(signal.id, {
