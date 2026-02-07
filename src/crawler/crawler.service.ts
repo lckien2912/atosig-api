@@ -7,7 +7,7 @@ import { Repository, In, MoreThanOrEqual } from "typeorm";
 import { lastValueFrom } from "rxjs";
 import { Signal } from "../signal/entities/signal.entity";
 import { SignalStatus } from "../signal/enums/signal-status.enum";
-import moment from "moment";
+import moment from "moment-timezone";
 import { NotificationsService } from "src/notification/notifications.service";
 import { NotificationType } from "src/notification/enums/notification.enum";
 import { TelegramService } from "src/telegram/telegram.service";
@@ -36,6 +36,45 @@ export class CrawlerService {
             priceUrl: this.configService.get<string>('SSI_PRICE_URL'),
             consumerID: this.configService.get<string>('SSI_CONSUMER_ID'),
             consumerSecret: this.configService.get<string>('SSI_CONSUMER_SECRET')
+        }
+    }
+
+    private readonly VIETNAM_TIMEZONE = 'Asia/Ho_Chi_Minh';
+
+    /** Giờ VN có cho phép chạy job update price: 9:00-15:05, 17:15-17:30, 19:45-20:05 */
+    private isUpdatePriceHours(): boolean {
+        const now = moment().tz(this.VIETNAM_TIMEZONE);
+        const timeInMinutes = now.hour() * 60 + now.minute();
+        const tradingStart = 9 * 60;
+        const tradingEnd = 15 * 60 + 5;
+        const preSummaryStart = 17 * 60 + 15;
+        const preSummaryEnd = 17 * 60 + 30;
+        const preScanStart = 19 * 60 + 45;
+        const preScanEnd = 20 * 60 + 5;
+        return (timeInMinutes >= tradingStart && timeInMinutes <= tradingEnd) ||
+            (timeInMinutes >= preSummaryStart && timeInMinutes <= preSummaryEnd) ||
+            (timeInMinutes >= preScanStart && timeInMinutes <= preScanEnd);
+    }
+
+    /** Đang trong giờ thị trường mở (9:00-15:05) để trigger TP/SL */
+    private isMarketOpen(): boolean {
+        const now = moment().tz(this.VIETNAM_TIMEZONE);
+        const timeInMinutes = now.hour() * 60 + now.minute();
+        const marketStart = 9 * 60;
+        const marketEnd = 15 * 60 + 5;
+        return timeInMinutes >= marketStart && timeInMinutes <= marketEnd;
+    }
+
+    /** Probe API: có data cho ngày này không (data-driven trading day) */
+    private async probeMarketData(symbol: string, token: string, dateStr: string): Promise<boolean> {
+        try {
+            const response = await lastValueFrom(this.httpService.get(this.ssiConfig.priceUrl, {
+                headers: { Authorization: `Bearer ${token}` },
+                params: { Symbol: symbol, FromDate: dateStr, ToDate: dateStr, PageIndex: 1, PageSize: 1 }
+            }));
+            return !!(response.data?.data?.length > 0);
+        } catch {
+            return false;
         }
     }
 
@@ -119,9 +158,12 @@ export class CrawlerService {
      */
     @Cron(CronExpression.EVERY_MINUTE)
     async handleCronUpdatePriceSignal() {
-
         if (this.isJobRunning) {
             this.logger.warn('⚠️ Previous job is still running. Skipping this tick.');
+            return;
+        }
+
+        if (!this.isUpdatePriceHours()) {
             return;
         }
 
@@ -129,14 +171,7 @@ export class CrawlerService {
         const startTime = Date.now();
 
         try {
-            this.logger.log('Starting price update job');
-
-            let searchMoment = moment();
-            const dayOfWeek = searchMoment.day();
-            if (dayOfWeek === 6) searchMoment = searchMoment.subtract(1, 'days');
-            else if (dayOfWeek === 0) searchMoment = searchMoment.subtract(2, 'days');
-
-            const today = searchMoment.format('DD/MM/YYYY');
+            const today = moment().tz(this.VIETNAM_TIMEZONE).format('DD/MM/YYYY');
 
             const signals = await this.signalRepository.find({
                 select: ['symbol'],
@@ -155,15 +190,23 @@ export class CrawlerService {
 
             const token = await this.getAccessToken();
 
-            // 2. Xử lý song song (Batch Processing)
-            // Chia nhỏ thành các nhóm 20 request một lúc để tránh nghẽn mạng/API limit
+            const probeSymbol = uniqueSymbols[0];
+            const hasData = await this.probeMarketData(probeSymbol, token, today);
+            if (!hasData) {
+                this.logger.log(`No market data for ${today}, skip price update job`);
+                return;
+            }
+
+            this.logger.log('Starting price update job');
+            const triggerTpSl = this.isMarketOpen();
+
             const BATCH_SIZE = 20;
             let successCount = 0;
             for (let i = 0; i < uniqueSymbols.length; i += BATCH_SIZE) {
                 const batch = uniqueSymbols.slice(i, i + BATCH_SIZE);
 
                 await Promise.all(
-                    batch.map(symbol => this.fetchAndUpdateOne(symbol, token, today)
+                    batch.map(symbol => this.fetchAndUpdateOne(symbol, token, today, triggerTpSl)
                         .then(res => { if (res) successCount++; })
                     )
                 );
@@ -227,8 +270,8 @@ export class CrawlerService {
 
         this.logger.log('--- Generating Daily PnL Summary ---');
         try {
-            const todayStr = moment().format('YYYY-MM-DD');
-            const startOfDay = moment().startOf('day').toDate();
+            const todayStr = moment().tz(this.VIETNAM_TIMEZONE).format('YYYY-MM-DD');
+            const startOfDay = moment().tz(this.VIETNAM_TIMEZONE).startOf('day').toDate();
 
             const activeSignals = await this.signalRepository.find({
                 where: { status: In([SignalStatus.ACTIVE, SignalStatus.PENDING]) }
@@ -310,7 +353,7 @@ export class CrawlerService {
         }
     }
 
-    private async fetchAndUpdateOne(symbol: string, token: string, dateStr: string): Promise<boolean> {
+    private async fetchAndUpdateOne(symbol: string, token: string, dateStr: string, triggerTpSl = true): Promise<boolean> {
         try {
             // config request ssi -> crawls[0]
             const url = this.ssiConfig.priceUrl;
@@ -384,113 +427,105 @@ export class CrawlerService {
                             continue;
                         }
 
-                        // tính toán pnl để bắn tele có thể sửa lại theo công thức
-                        const entryPrice = (Number(signal.entry_price_min) + Number(signal.entry_price_max || signal.entry_price_min)) / 2;
-                        let pnlPercent = ((currentPrice - entryPrice) / entryPrice) * 100;
-                        const pnlFormatted = parseFloat(pnlPercent.toFixed(2));
+                        if (triggerTpSl) {
+                            // tính toán pnl để bắn tele có thể sửa lại theo công thức
+                            const entryPrice = (Number(signal.entry_price_min) + Number(signal.entry_price_max || signal.entry_price_min)) / 2;
+                            let pnlPercent = ((currentPrice - entryPrice) / entryPrice) * 100;
+                            const pnlFormatted = parseFloat(pnlPercent.toFixed(2));
 
-                        if (currentPrice >= Number(signal.tp1_price) && !signal.tp1_hit_at) {
-                            updateData.tp1_hit_at = new Date();
-                            this.logger.log(`🚀 ${symbol} HIT TP1 at ${currentPrice}`);
+                            if (currentPrice >= Number(signal.tp1_price) && !signal.tp1_hit_at) {
+                                updateData.tp1_hit_at = new Date();
+                                this.logger.log(`🚀 ${symbol} HIT TP1 at ${currentPrice}`);
 
-                            // call noti
-                            await this.notiService.createSignalNotification({
-                                symbol: symbol,
-                                exchange: signal.exchange,
-                                type: NotificationType.SIGNAL_TP_1,
-                                price: currentPrice,
-                                change_percent: changePercent,
-                                signal_id: signal.id
-                            });
+                                await this.notiService.createSignalNotification({
+                                    symbol: symbol,
+                                    exchange: signal.exchange,
+                                    type: NotificationType.SIGNAL_TP_1,
+                                    price: currentPrice,
+                                    change_percent: changePercent,
+                                    signal_id: signal.id
+                                });
 
-                            // Send message to telegram
-                            await this.telegramService.sendMessageToTelegram({
-                                symbol,
-                                type: 'TP1',
-                                pnl_percent: pnlFormatted,
-                            });
-                        }
-
-                        if (currentPrice >= Number(signal.tp2_price) && !signal.tp2_hit_at) {
-                            updateData.tp2_hit_at = new Date();
-                            this.logger.log(`🚀 ${symbol} HIT TP2 at ${currentPrice}`);
-
-                            // call noti
-                            await this.notiService.createSignalNotification({
-                                symbol: symbol,
-                                exchange: signal.exchange,
-                                type: NotificationType.SIGNAL_TP_2,
-                                price: currentPrice,
-                                change_percent: changePercent,
-                                signal_id: signal.id
-                            });
-
-                            // Send message to telegram
-                            await this.telegramService.sendMessageToTelegram({
-                                symbol,
-                                type: 'TP2',
-                                pnl_percent: pnlFormatted,
-                            });
-                        }
-
-                        // TP3 -> Close immediately
-                        if (currentPrice >= Number(signal.tp3_price) && !signal.tp3_hit_at) {
-                            updateData.tp3_hit_at = new Date();
-                            updateData.status = SignalStatus.CLOSED;
-                            updateData.closed_at = new Date();
-                            this.logger.log(`🚀 ${symbol} HIT TP3 at ${currentPrice} -> CLOSED`);
-
-                            // call noti
-                            await this.notiService.createSignalNotification({
-                                symbol: symbol,
-                                exchange: signal.exchange,
-                                type: NotificationType.SIGNAL_TP_3,
-                                price: currentPrice,
-                                change_percent: changePercent,
-                                signal_id: signal.id
-                            });
-
-                            // Send message to telegram
-                            await this.telegramService.sendMessageToTelegram({
-                                symbol,
-                                type: 'TP3',
-                                pnl_percent: pnlFormatted
-                            });
-                        }
-
-                        if (currentPrice <= Number(signal.stop_loss_price) && !signal.sl_hit_at) {
-                            updateData.sl_hit_at = new Date();
-                            updateData.status = SignalStatus.CLOSED;
-                            updateData.closed_at = new Date();
-                            this.logger.log(`🔻 ${symbol} HIT SL at ${currentPrice}`);
-
-                            // call noti
-                            await this.notiService.createSignalNotification({
-                                symbol: symbol,
-                                exchange: signal.exchange,
-                                type: NotificationType.SIGNAL_SL,
-                                price: currentPrice,
-                                change_percent: changePercent,
-                                signal_id: signal.id
-                            });
-
-                            // Send message to telegram
-                            await this.telegramService.sendMessageToTelegram({
-                                symbol,
-                                type: 'SL',
-                                pnl_percent: pnlFormatted
-                            });
-                        }
-
-                        // Check expired: nếu holding_period < thời gian hiện tại thì update status = CLOSED
-                        const now = new Date();
-                        if (signal.holding_period && now > new Date(signal.holding_period) && signal.status !== SignalStatus.CLOSED) {
-                            updateData.status = SignalStatus.CLOSED;
-                            updateData.is_expired = true;
-                            if (!updateData.closed_at) {
-                                updateData.closed_at = new Date();
+                                await this.telegramService.sendMessageToTelegram({
+                                    symbol,
+                                    type: 'TP1',
+                                    pnl_percent: pnlFormatted,
+                                });
                             }
-                            this.logger.log(`⏰ ${symbol} EXPIRED - Auto closed`);
+
+                            if (currentPrice >= Number(signal.tp2_price) && !signal.tp2_hit_at) {
+                                updateData.tp2_hit_at = new Date();
+                                this.logger.log(`🚀 ${symbol} HIT TP2 at ${currentPrice}`);
+
+                                await this.notiService.createSignalNotification({
+                                    symbol: symbol,
+                                    exchange: signal.exchange,
+                                    type: NotificationType.SIGNAL_TP_2,
+                                    price: currentPrice,
+                                    change_percent: changePercent,
+                                    signal_id: signal.id
+                                });
+
+                                await this.telegramService.sendMessageToTelegram({
+                                    symbol,
+                                    type: 'TP2',
+                                    pnl_percent: pnlFormatted,
+                                });
+                            }
+
+                            if (currentPrice >= Number(signal.tp3_price) && !signal.tp3_hit_at) {
+                                updateData.tp3_hit_at = new Date();
+                                updateData.status = SignalStatus.CLOSED;
+                                updateData.closed_at = new Date();
+                                this.logger.log(`🚀 ${symbol} HIT TP3 at ${currentPrice} -> CLOSED`);
+
+                                await this.notiService.createSignalNotification({
+                                    symbol: symbol,
+                                    exchange: signal.exchange,
+                                    type: NotificationType.SIGNAL_TP_3,
+                                    price: currentPrice,
+                                    change_percent: changePercent,
+                                    signal_id: signal.id
+                                });
+
+                                await this.telegramService.sendMessageToTelegram({
+                                    symbol,
+                                    type: 'TP3',
+                                    pnl_percent: pnlFormatted
+                                });
+                            }
+
+                            if (currentPrice <= Number(signal.stop_loss_price) && !signal.sl_hit_at) {
+                                updateData.sl_hit_at = new Date();
+                                updateData.status = SignalStatus.CLOSED;
+                                updateData.closed_at = new Date();
+                                this.logger.log(`🔻 ${symbol} HIT SL at ${currentPrice}`);
+
+                                await this.notiService.createSignalNotification({
+                                    symbol: symbol,
+                                    exchange: signal.exchange,
+                                    type: NotificationType.SIGNAL_SL,
+                                    price: currentPrice,
+                                    change_percent: changePercent,
+                                    signal_id: signal.id
+                                });
+
+                                await this.telegramService.sendMessageToTelegram({
+                                    symbol,
+                                    type: 'SL',
+                                    pnl_percent: pnlFormatted
+                                });
+                            }
+
+                            const now = new Date();
+                            if (signal.holding_period && now > new Date(signal.holding_period) && signal.status !== SignalStatus.CLOSED) {
+                                updateData.status = SignalStatus.CLOSED;
+                                updateData.is_expired = true;
+                                if (!updateData.closed_at) {
+                                    updateData.closed_at = new Date();
+                                }
+                                this.logger.log(`⏰ ${symbol} EXPIRED - Auto closed`);
+                            }
                         }
 
                         const updateResult = await this.signalRepository.update(
