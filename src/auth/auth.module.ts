@@ -11,11 +11,13 @@ import { JwtStrategy } from "./jwt.strategy";
 import { OptionalJwtAuthGuard } from "./guards/optional-jwt-auth.guard";
 import { MailModule } from "src/mail/mail.module";
 import { VerificationCode } from "./entities/verification-code.entity";
+import { AffiliateModule } from "src/affiliate/affiliate.module";
 
 @Module({
     imports: [
         TypeOrmModule.forFeature([User, VerificationCode]),
         MailModule,
+        AffiliateModule,
         PassportModule,
         JwtModule.registerAsync({
             imports: [ConfigModule],

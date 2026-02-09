@@ -16,6 +16,7 @@ import { ConfirmRegisterDto } from "./dto/confirm-register.dto";
 import { LoginGoogleDto } from "./dto/login-google.dto";
 import { MailerService } from "@nestjs-modules/mailer";
 import moment from "moment";
+import { AffiliateService } from "src/affiliate/affiliate.service";
 
 @Injectable()
 export class AuthService {
@@ -26,7 +27,8 @@ export class AuthService {
         private readonly mailerService: MailerService,
         private configService: ConfigService,
         private dataSource: DataSource,
-        private googleClient: OAuth2Client
+        private googleClient: OAuth2Client,
+        private readonly affiliateService: AffiliateService
     ) {
         const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
         this.googleClient = new OAuth2Client(clientId);
@@ -72,6 +74,11 @@ export class AuthService {
 
         if (dto.password !== dto.confirmPassword) throw new BadRequestException('Mật khẩu không khớp');
 
+        if (dto.refCode) {
+            const refUser = await this.userRepository.findOne({ where: { ref_code: dto.refCode } });
+            if (!refUser || !refUser.is_active) throw new BadRequestException('Mã giới thiệu không hợp lệ');
+        }
+
         const hashedPassword = await bcrypt.hash(dto.password, 10);
 
         return this.generateAndSendOtp(
@@ -82,8 +89,29 @@ export class AuthService {
             {
                 password: hashedPassword,
                 full_name: dto.fullName || '',
+                ref_code: dto.refCode || null,
             }
         );
+    }
+
+
+    private generateReferralCode(length = 8): string {
+        const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        let result = '';
+        for (let i = 0; i < length; i++) {
+            result += characters.charAt(Math.floor(Math.random() * characters.length));
+        }
+        return result;
+    }
+
+    private async generateUniqueReferralCode(length = 8): Promise<string> {
+        const maxAttempts = 20;
+        for (let i = 0; i < maxAttempts; i++) {
+            const code = this.generateReferralCode(length);
+            const existing = await this.userRepository.findOne({ where: { ref_code: code } });
+            if (!existing) return code;
+        }
+        throw new BadRequestException('Không thể tạo mã giới thiệu.');
     }
 
     async register(dto: ConfirmRegisterDto) {
@@ -100,8 +128,8 @@ export class AuthService {
             await queryRunner.startTransaction();
 
             try {
-
                 const userData = record.context_data;
+                const refCode = await this.generateUniqueReferralCode();
 
                 const newUser = this.userRepository.create({
                     email: record.email,
@@ -110,13 +138,27 @@ export class AuthService {
                     role: UserRole.USER,
                     subscription_tier: UserSubscriptionTier.FREE,
                     kyc_status: KycStatus.UNVERIFIED,
-                    login_type: LoginType.EMAIL
+                    login_type: LoginType.EMAIL,
+                    ref_code: refCode,
+                    ref_from: userData.ref_code,
                 });
                 await this.userRepository.save(newUser);
 
                 await queryRunner.manager.delete(VerificationCode, { id: record.id });
 
                 await queryRunner.commitTransaction();
+
+                // Tạo affiliate user sau khi commit transaction thành công
+                try {
+                    await this.affiliateService.createAffiliateUser(
+                        refCode,
+                        userData.ref_code,
+                        newUser.email
+                    );
+                } catch (affError) {
+                    // Log nhưng không fail transaction vì đây là tính năng phụ
+                    console.error('Failed to create affiliate user:', affError);
+                }
 
                 return this.generateTokens(newUser);
 
@@ -134,7 +176,7 @@ export class AuthService {
     async login(loginDto: LoginDto) {
         const user = await this.userRepository.findOne({
             where: { email: loginDto.email },
-            select: ['id', 'email', 'password', 'role', 'full_name', 'subscription_tier', 'is_active']
+            select: ['id', 'email', 'password', 'role', 'full_name', 'subscription_tier', 'is_active', 'ref_code']
         });
 
         if (!user) throw new BadRequestException('Tài khoản không tồn tại');
@@ -145,6 +187,17 @@ export class AuthService {
 
         const isPasswordValid = await bcrypt.compare(loginDto.password, pass);
         if (!isPasswordValid) throw new BadRequestException('Mật khẩu không chính xác.');
+
+        if (!user.ref_code) {
+            const refCode = await this.generateUniqueReferralCode();
+            this.affiliateService.createAffiliateUser(
+                refCode,
+                undefined,
+                user.email
+            );
+            user.ref_code = refCode;
+            await this.userRepository.update(user.id, { ref_code: refCode });
+        }
 
         return this.generateTokens(user);
     }
@@ -178,7 +231,8 @@ export class AuthService {
             role: user.role,
             avatar: user.avatar,
             is_verified: user.is_verified,
-            subscription_tier: user.subscription_tier
+            subscription_tier: user.subscription_tier,
+            ref_code: user.ref_code
         };
 
         const accessTime = this.configService.get<string>('JWT_ACCESS_EXPIRATION') || '1d';
@@ -229,10 +283,28 @@ export class AuthService {
                 if (!user.avatar && picture) {
                     user.avatar = picture;
                 }
+                
+                if (!user.ref_code) {
+                    const refCode = await this.generateUniqueReferralCode();
+                    this.affiliateService.createAffiliateUser(
+                        refCode,
+                        undefined,
+                        user.email
+                    );
+                    user.ref_code = refCode;
+                }
 
                 await this.userRepository.save(user);
 
             } else {
+                const refCode = await this.generateUniqueReferralCode();
+
+                let ref_from: string | undefined;
+                if (dto.ref_code) {
+                    const refUser = await this.userRepository.findOne({ where: { ref_code: dto.ref_code } });
+                    if (refUser) ref_from = refUser.ref_code;
+                }
+
                 user = this.userRepository.create({
                     email,
                     full_name: `${given_name || ''}`.trim() || email,
@@ -244,10 +316,23 @@ export class AuthService {
                     is_set_pass: false,
                     subscription_tier: UserSubscriptionTier.FREE,
                     kyc_status: KycStatus.UNVERIFIED,
-                    login_type: LoginType.GOOGLE
+                    login_type: LoginType.GOOGLE,
+                    ref_code: refCode,
+                    ref_from
                 });
 
                 await this.userRepository.save(user);
+
+                // Tạo affiliate user cho user mới đăng ký qua Google
+                try {
+                    await this.affiliateService.createAffiliateUser(
+                        refCode,
+                        ref_from,
+                        user.email
+                    );
+                } catch (affError) {
+                    console.error('Failed to create affiliate user for Google login:', affError);
+                }
             }
 
             return this.generateTokens(user);

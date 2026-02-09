@@ -21,6 +21,7 @@ import { MarketModule } from "./market/market.module";
 import { CompanyModule } from "./company/company.module";
 import { TelegramModule } from "./telegram/telegram.module";
 import { ScheduleModule } from "@nestjs/schedule";
+import { AffiliateModule } from "./affiliate/affiliate.module";
 
 @Module({
   imports: [
@@ -59,7 +60,8 @@ import { ScheduleModule } from "@nestjs/schedule";
     AuthModule,
     ProfileModule,
     MarketModule,
-    TelegramModule
+    TelegramModule,
+    AffiliateModule
   ],
   controllers: [AppController],
   providers: [AppService],

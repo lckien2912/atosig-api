@@ -19,13 +19,11 @@ export class CreateSignalDto {
 
     @ApiProperty({ example: 40000 })
     @IsNumber()
-    @IsOptional()
-    entry_price_min?: number;
+    entry_price_min: number;
 
     @ApiProperty({ example: 40000 })
     @IsNumber()
-    @IsOptional()
-    entry_price_max?: number;
+    entry_price_max: number;
 
     @ApiProperty({ example: 40500 })
     @IsNumber()

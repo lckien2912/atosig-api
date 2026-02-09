@@ -16,8 +16,10 @@ import { TelegramService } from "src/telegram/telegram.service";
 export class CrawlerService {
     private readonly logger = new Logger(CrawlerService.name);
 
-    // cờ tránh trạng thái job chồng chéo
-    private isJobRunning = false;
+    // cờ tránh từng loại job chạy chồng chéo
+    private isScanJobRunning = false;
+    private isUpdatePriceJobRunning = false;
+    private isSummaryJobRunning = false;
 
     private accessToken: string = '';
     private tokenExpiry: number = 0;
@@ -113,11 +115,11 @@ export class CrawlerService {
 
     @Cron('0 20 * * *')
     async scanForNewSignal() {
-        if (this.isJobRunning) {
+        if (this.isScanJobRunning) {
             this.logger.warn('⚠️ Previous scan job is still running. Skipping this tick.');
             return;
         }
-        this.isJobRunning = true;
+        this.isScanJobRunning = true;
 
         try {
             const newSignals = await this.signalRepository.find({
@@ -130,7 +132,7 @@ export class CrawlerService {
             });
 
             if (newSignals.length === 0) {
-                this.isJobRunning = false;
+                this.isScanJobRunning = false;
                 return;
             }
 
@@ -147,7 +149,7 @@ export class CrawlerService {
         } catch (error) {
             this.logger.error("Error scanning new signals", error);
         } finally {
-            this.isJobRunning = false;
+            this.isScanJobRunning = false;
         }
     }
 
@@ -158,8 +160,8 @@ export class CrawlerService {
      */
     @Cron(CronExpression.EVERY_MINUTE)
     async handleCronUpdatePriceSignal() {
-        if (this.isJobRunning) {
-            this.logger.warn('⚠️ Previous job is still running. Skipping this tick.');
+        if (this.isUpdatePriceJobRunning) {
+            this.logger.warn('⚠️ Previous price update job is still running. Skipping this tick.');
             return;
         }
 
@@ -167,7 +169,7 @@ export class CrawlerService {
             return;
         }
 
-        this.isJobRunning = true;
+        this.isUpdatePriceJobRunning = true;
         const startTime = Date.now();
 
         try {
@@ -218,7 +220,7 @@ export class CrawlerService {
         } catch (error) {
             this.logger.error('Error in Cron Job', error);
         } finally {
-            this.isJobRunning = false;
+            this.isUpdatePriceJobRunning = false;
         }
     }
 
@@ -262,11 +264,11 @@ export class CrawlerService {
     @Cron('30 17 * * 1-5') // Run at 17:30 Mon-Fri (After market close)
     // @Cron(CronExpression.EVERY_MINUTE)
     async handleCronDailySummary() {
-        if (this.isJobRunning) {
+        if (this.isSummaryJobRunning) {
             this.logger.warn('⚠️ Summary job is still running. Skipping.');
             return;
         }
-        this.isJobRunning = true;
+        this.isSummaryJobRunning = true;
 
         this.logger.log('--- Generating Daily PnL Summary ---');
         try {
@@ -349,7 +351,7 @@ export class CrawlerService {
         } catch (error) {
             this.logger.error('Error generating daily summary', error);
         } finally {
-            this.isJobRunning = false;
+            this.isSummaryJobRunning = false;
         }
     }
 

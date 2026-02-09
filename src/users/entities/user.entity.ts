@@ -58,6 +58,13 @@ export class User {
     @Column({ type: 'varchar', nullable: true })
     avatar: string;
 
+
+    @Column({ type: 'varchar', unique: true, nullable: true })
+    ref_code: string;
+
+    @Column({ type: 'varchar', nullable: true })
+    ref_from: string | null;
+
     @Column({ type: 'enum', enum: LoginType, default: LoginType.EMAIL })
     login_type: LoginType;
 

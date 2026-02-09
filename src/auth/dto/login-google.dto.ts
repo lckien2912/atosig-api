@@ -1,5 +1,5 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { IsNotEmpty, IsString } from "class-validator";
+import { IsNotEmpty, IsString, IsOptional } from "class-validator";
 
 export class LoginGoogleDto {
     @ApiProperty({
@@ -9,4 +9,12 @@ export class LoginGoogleDto {
     @IsNotEmpty({ message: 'Token ID là bắt buộc' })
     @IsString()
     token_id: string;
+
+    @ApiProperty({
+        description: 'Referral code from frontend (next-auth)',
+        example: 'REF123456'
+    })
+    @IsString()
+    @IsOptional()
+    ref_code?: string;
 }
