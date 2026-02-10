@@ -45,4 +45,13 @@ export class RegisterDto {
         message: 'Mật khẩu phải chứa ít nhất 1 ký tự đặc biệt (!@#$%^&*)'
     })
     confirmPassword: string;
+
+    @ApiProperty({
+        example: 'abc123-xyz789',
+        description: 'Mã giới thiệu từ người dùng khác (không bắt buộc)',
+        required: false,
+    })
+    @IsOptional()
+    @IsString()
+    refCode?: string;
 }

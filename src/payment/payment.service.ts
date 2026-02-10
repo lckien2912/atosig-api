@@ -7,11 +7,13 @@ import { CreatePaymentDto } from './dto/create-payment.dto';
 import { PaymentGateway, PaymentStatus, PaymentCurrency } from './enums/payment.enum';
 import { UserSubscription } from '../pricing/entities/user-subscription.entity';
 import { SubscriptionStatus } from '../pricing/enums/pricing.enum';
+import { User } from '../users/entities/user.entity';
 import moment from 'moment';
 import * as crypto from 'crypto';
 import axios from 'axios';
 import { NotificationsService } from 'src/notification/notifications.service';
 import { NotificationType } from 'src/notification/enums/notification.enum';
+import { AffiliateService } from 'src/affiliate/affiliate.service';
 
 @Injectable()
 export class PaymentService {
@@ -22,9 +24,12 @@ export class PaymentService {
         private paymentRepo: Repository<PaymentTransaction>,
         @InjectRepository(UserSubscription)
         private subRepo: Repository<UserSubscription>,
+        @InjectRepository(User)
+        private userRepo: Repository<User>,
         private configService: ConfigService,
         private readonly notiService: NotificationsService,
-        private dataSource: DataSource
+        private dataSource: DataSource,
+        private readonly affiliateService: AffiliateService
     ) { }
 
     // ==========================================
@@ -272,6 +277,30 @@ export class PaymentService {
                         }
                     });
                     this.logger.log(`User subscription ${sub.id} activated.`);
+
+                    // Tạo affiliate order để tính commission cho referrer
+                    try {
+                        const user = await this.userRepo.findOne({
+                            where: { id: transaction.user_id },
+                            select: ['ref_code']
+                        });
+
+                        if (user && user.ref_code) {
+                            await this.affiliateService.createOrder(
+                                user.ref_code,
+                                txnCode,
+                                sub.plan?.name || 'VIP Subscription',
+                                Number(transaction.amount),
+                                Number(transaction.amount)
+                            );
+                            this.logger.log(`Affiliate order created for transaction: ${txnCode}`);
+                        } else {
+                            this.logger.warn(`User ${transaction.user_id} does not have ref_code, skipping affiliate order`);
+                        }
+                    } catch (affError) {
+                        // Log nhưng không fail transaction vì đây là tính năng phụ
+                        this.logger.warn(`Failed to create affiliate order for ${txnCode}:`, affError.message);
+                    }
                 }
             }
 
