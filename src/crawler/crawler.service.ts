@@ -259,6 +259,32 @@ export class CrawlerService {
     }
 
     /**
+     * PnL % for daily summary (highest profit of the day).
+     * Closed: use TP/SL % when available; else fallback (highest_price vs entry).
+     * Active/Pending: use highest_price vs entry. Returns null to skip signal (e.g. invalid data).
+     */
+    private getPnlPercentForSummary(signal: Signal): number | null {
+        const entryMin = Number(signal.entry_price_min);
+        const entryMax = Number(signal.entry_price_max || signal.entry_price_min);
+        const entryAvg = (entryMin + entryMax) / 2;
+
+        if (signal.status === SignalStatus.CLOSED) {
+            if (signal.tp3_hit_at) return Number(signal.tp3_pct);
+            if (signal.tp2_hit_at) return Number(signal.tp2_pct);
+            if (signal.tp1_hit_at) return Number(signal.tp1_pct);
+            if (signal.sl_hit_at) return Number(signal.stop_loss_pct);
+            // No TP/SL hit: use highest_price (daily high) for highest profit of the day
+            const highestPrice = Number(signal.highest_price);
+            if (entryAvg === 0 || !highestPrice || isNaN(highestPrice) || highestPrice === 0) return null;
+            return ((highestPrice - entryAvg) / entryAvg) * 100;
+        }
+
+        const highestPrice = Number(signal.highest_price);
+        if (entryAvg === 0 || highestPrice === 0) return null;
+        return ((highestPrice - entryAvg) / entryAvg) * 100;
+    }
+
+    /**
      * Cronjob Daily Summary (e.g. at 17:00 when market closes or 23:59)
      */
     @Cron('30 17 * * 1-5') // Run at 17:30 Mon-Fri (After market close)
@@ -298,14 +324,9 @@ export class CrawlerService {
             let totalProfit = 0;
 
             for (const signal of allSignals) {
-                const highestPrice = Number(signal.highest_price);
-                const entryMin = Number(signal.entry_price_min);
-                const entryMax = Number(signal.entry_price_max || signal.entry_price_min);
-                const entryAvg = (entryMin + entryMax) / 2;
+                const pnl = this.getPnlPercentForSummary(signal);
+                if (pnl === null) continue;
 
-                if (entryAvg === 0 || highestPrice === 0) continue;
-
-                const pnl = ((highestPrice - entryAvg) / entryAvg) * 100;
                 totalProfit += pnl;
 
                 const isClosed = signal.status === SignalStatus.CLOSED;
@@ -326,24 +347,24 @@ export class CrawlerService {
                 return;
             }
 
-            let message = `Summary of profit/loss to date (${todayStr}):\n`;
+            let message = `Summary of highest profit to date (${todayStr}):\n`;
 
-            message += `💹 Profit signals: ${profitList.length}\n`;
+            message += `🟢 Profit signals: ${profitList.length}\n`;
             if (profitList.length > 0) {
                 message += profitList.join('\n') + '\n';
             } else {
                 message += '(No profit signals today)\n';
             }
 
-            message += `🛑 Loss signals: ${lossList.length}\n`;
+            message += `🔴 Loss signals: ${lossList.length}\n`;
             if (lossList.length > 0) {
                 message += lossList.join('\n') + '\n';
             } else {
                 message += '(No loss signals today)\n';
             }
 
-            message += `💹\n`;
-            message += `Profit: ${totalProfit.toFixed(2)}%`;
+            message += `📊\n`;
+            message += `Total the highest profit: ${totalProfit.toFixed(2)}%`;
 
             await this.telegramService.sendDailySummary(message);
             this.logger.log('Daily Summary Sent to Telegram');
