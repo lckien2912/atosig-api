@@ -5,6 +5,8 @@ import { User } from './entities/user.entity';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PaginationDto } from './dto/pagination.dto';
 import { UserRole, UserStatus } from './enums/user-status.enum';
+import { UserSubscription } from '../pricing/entities/user-subscription.entity';
+import { SubscriptionStatus } from 'src/pricing/enums/pricing.enum';
 
 @Injectable()
 export class UsersService {
@@ -63,7 +65,26 @@ export class UsersService {
             );
         }
 
-        queryBuilder.orderBy("user.created_at", "DESC");
+        queryBuilder
+            .leftJoinAndMapOne(
+                'user.subscription',
+                UserSubscription,
+                'sub',
+                'sub.user_id = user.id AND sub.status = :activeStatus',
+                { activeStatus: SubscriptionStatus.ACTIVE }
+            )
+            .leftJoin('sub.plan', 'plan')
+            .addSelect([
+                'sub.id',
+                'sub.payment_method',
+                'plan.id',
+                'plan.name',
+                'plan.price',
+                'plan.discount_percentage',
+            ])
+            .orderBy("user.created_at", "DESC")
+            .skip(skip)
+            .take(limit);
 
         const [users, total] = await queryBuilder.getManyAndCount();
 
