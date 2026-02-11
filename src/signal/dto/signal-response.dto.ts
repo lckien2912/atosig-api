@@ -84,9 +84,6 @@ export class SignalResponseDto {
   is_favorited: boolean;
 
   @ApiProperty({ example: "2025-11-05T10:30:22.000Z", nullable: true })
-  close_time: Date | null;
-
-  @ApiProperty({ example: "2025-11-05T10:30:22.000Z", nullable: true })
   tp1_hit_at: Date | null;
 
   @ApiProperty({ example: "2025-11-05T10:30:22.000Z", nullable: true })

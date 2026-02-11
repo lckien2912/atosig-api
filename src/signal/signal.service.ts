@@ -319,33 +319,23 @@ export class SignalService {
         const actualEfficiency = this.calculateActualEfficiency(signal);
 
         // Handle status
-        let statusCode = 0;
-        const now = moment();
-        const holdDate = signal.holding_period ? moment(signal.holding_period) : null;
-        let closeTime: Date | null = null;
-        
-        if (marketPrice <= sl && !!signal.sl_hit_at) {
+        let statusCode = SignalDisplayStatus.NO_ZONE;
+
+        if (!!signal.sl_hit_at) {
             statusCode = SignalDisplayStatus.STOP_LOSS;
-            closeTime = signal.sl_hit_at || null;
-        } else if (marketPrice >= tp3 && !!signal.tp3_hit_at) {
+        } else if (!!signal.tp3_hit_at) {
             statusCode = SignalDisplayStatus.TAKE_PROFIT_3;
-            closeTime = signal.tp3_hit_at || null;
-        } else if (marketPrice >= tp2 && !!signal.tp2_hit_at) {
+        } else if (!!signal.tp2_hit_at) {
             statusCode = SignalDisplayStatus.TAKE_PROFIT_2;
-            closeTime = signal.tp2_hit_at || null;
-        } else if (marketPrice >= tp1 && !!signal.tp1_hit_at) {
+        } else if (!!signal.tp1_hit_at) {
             statusCode = SignalDisplayStatus.TAKE_PROFIT_1;
-            closeTime = signal.tp1_hit_at || null;
-        } else if (holdDate && now.isAfter(holdDate)) {
-            statusCode = SignalDisplayStatus.EXPIRED;
-            closeTime = holdDate.toDate();
-        } else if (marketPrice >= signal.entry_price_min && marketPrice <= signal.entry_price_max) {
+        } else if (marketPrice >= entryMin && marketPrice <= entryMax) {
             statusCode = SignalDisplayStatus.BUY_ZONE;
-            closeTime = null;
         }
 
         // Handle holding time
         let holdingTimeText = 'N/A';
+        const holdDate = signal.holding_period ? moment(signal.holding_period) : null;
         const startDate = signal.signal_date
             ? moment(signal.signal_date)
             : moment(signal.created_at);
@@ -388,7 +378,6 @@ export class SignalService {
             is_expired: signal.is_expired,
             holding_time: isLocked ? null : holdingTimeText,
             is_favorited: isFavorited,
-            close_time: closeTime,
             tp1_hit_at: isLocked ? null : signal.tp1_hit_at,
             tp2_hit_at: isLocked ? null : signal.tp2_hit_at,
             tp3_hit_at: isLocked ? null : signal.tp3_hit_at,
