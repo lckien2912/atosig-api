@@ -1,6 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
+import { InjectRepository } from '@nestjs/typeorm';
+import { In, Repository } from 'typeorm';
 import { AxiosError, AxiosResponse } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import {
@@ -10,12 +12,12 @@ import {
     AffiliateInviteeDto,
     AffiliateCommissionDto,
     AffiliateResponseDto,
-    GetUserParamDto,
     GetInviteesQueryDto,
     GetCommissionsQueryDto
 } from './dto';
 import { AffiliateErrorCode } from './enums/affiliate-error-code.enum';
 import { handleAffiliateError, handleAxiosError } from './helpers/affiliate-error-handler';
+import { User } from '../users/entities/user.entity';
 
 @Injectable()
 export class AffiliateService {
@@ -26,7 +28,9 @@ export class AffiliateService {
 
     constructor(
         private readonly httpService: HttpService,
-        private readonly configService: ConfigService
+        private readonly configService: ConfigService,
+        @InjectRepository(User)
+        private readonly userRepository: Repository<User>
     ) {
         this.baseUrl = this.configService.get<string>('AFFILIATE_SERVICE_URL') || 'http://localhost:8080';
         this.apiKey = this.configService.get<string>('AFFILIATE_API_KEY') || '';
@@ -68,6 +72,7 @@ export class AffiliateService {
             );
 
             const responseData = response.data;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
             if (responseData.code !== AffiliateErrorCode.SUCCESS) {
                 handleAffiliateError(responseData.code as AffiliateErrorCode, responseData.message);
             }
@@ -108,6 +113,7 @@ export class AffiliateService {
             );
 
             const responseData = response.data;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
             if (responseData.code !== AffiliateErrorCode.SUCCESS) {
                 handleAffiliateError(responseData.code as AffiliateErrorCode, responseData.message);
             }
@@ -139,6 +145,8 @@ export class AffiliateService {
             );
 
             const responseData = response.data;
+
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
             if (responseData.code !== AffiliateErrorCode.SUCCESS) {
                 handleAffiliateError(responseData.code as AffiliateErrorCode, responseData.message);
             }
@@ -157,10 +165,7 @@ export class AffiliateService {
         }
     }
 
-    /**
-     * Lấy danh sách invitees của user
-     */
-    async getUserInvitees(param: GetUserParamDto, query: GetInviteesQueryDto) {
+    async getUserInvitees(uid: string, query: GetInviteesQueryDto) {
         try {
             // Nếu không truyền ngày, set mặc định từ đầu năm 2026 đến ngày hiện tại + 1 ngày
             if (!query.fromDate && !query.toDate) {
@@ -172,13 +177,14 @@ export class AffiliateService {
             }
 
             const response: AxiosResponse<AffiliateResponseDto<AffiliateInviteeDto[]>> = await firstValueFrom(
-                this.httpService.get(`${this.baseUrl}/api/v1/users/invitees/${param.uid}`, {
+                this.httpService.get(`${this.baseUrl}/api/v1/users/invitees/${uid}`, {
                     headers: this.getHeaders(),
                     params: query
                 })
             );
 
             const responseData = response.data;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
             if (responseData.code !== AffiliateErrorCode.SUCCESS) {
                 handleAffiliateError(responseData.code as AffiliateErrorCode, responseData.message);
             }
@@ -188,17 +194,23 @@ export class AffiliateService {
             const limit = responseData.pagination?.size || 0;
             const totalPages = Math.ceil(total / limit);
 
+            const invitees = responseData.data || [];
+            const uids = invitees.map(i => i.uid);
+            const users = uids.length > 0 ? await this.userRepository.find({ where: { ref_code: In(uids) }, select: ['ref_code', 'email'] }) : [];
+            const emailByUid = new Map(users.map(u => [u.ref_code, u.email]));
+            const data = invitees.map(i => ({ ...i, email: emailByUid.get(i.uid) ?? null }));
+
             return {
-              data: responseData.data,
-              meta: {
-                total,
-                page: Number(page),
-                limit: Number(limit),
-                totalPages: Number(totalPages),
-              }
+                data,
+                meta: {
+                    total,
+                    page: Number(page),
+                    limit: Number(limit),
+                    totalPages: Number(totalPages)
+                }
             };
         } catch (error) {
-            this.logger.error(`Failed to get invitees for user: ${param.uid}`, error instanceof Error ? error.message : String(error));
+            this.logger.error(`Failed to get invitees for user: ${uid}`, error instanceof Error ? error.message : String(error));
             if (error instanceof AxiosError) {
                 handleAxiosError(error);
             }
@@ -213,7 +225,7 @@ export class AffiliateService {
     /**
      * Lấy lịch sử commission của user
      */
-    async getUserCommissions(param: GetUserParamDto, query: GetCommissionsQueryDto) {
+    async getUserCommissions(uid: string, query: GetCommissionsQueryDto) {
         try {
             // Nếu không truyền ngày, set mặc định từ đầu năm 2026 đến ngày hiện tại + 1 ngày
             if (!query.fromDate && !query.toDate) {
@@ -225,13 +237,14 @@ export class AffiliateService {
             }
 
             const response: AxiosResponse<AffiliateResponseDto<AffiliateCommissionDto[]>> = await firstValueFrom(
-                this.httpService.get(`${this.baseUrl}/api/v1/users/commissions/${param.uid}`, {
+                this.httpService.get(`${this.baseUrl}/api/v1/users/commissions/${uid}`, {
                     headers: this.getHeaders(),
                     params: query
                 })
             );
 
             const responseData = response.data;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
             if (responseData.code !== AffiliateErrorCode.SUCCESS) {
                 handleAffiliateError(responseData.code as AffiliateErrorCode, responseData.message);
             }
@@ -242,16 +255,16 @@ export class AffiliateService {
             const totalPages = Math.ceil(total / limit);
 
             return {
-              data: responseData.data,
-              meta: {
-                total,
-                page: Number(page),
-                limit: Number(limit),
-                totalPages: Number(totalPages),
-              }
+                data: responseData.data,
+                meta: {
+                    total,
+                    page: Number(page),
+                    limit: Number(limit),
+                    totalPages: Number(totalPages)
+                }
             };
         } catch (error) {
-            this.logger.error(`Failed to get commissions for user: ${param.uid}`, error instanceof Error ? error.message : String(error));
+            this.logger.error(`Failed to get commissions for user: ${uid}`, error instanceof Error ? error.message : String(error));
             if (error instanceof AxiosError) {
                 handleAxiosError(error);
             }
@@ -264,20 +277,22 @@ export class AffiliateService {
     }
 
     /**
-     * Cập nhật commission rate của user (cho admin)
+     * Cập nhật commission rate của user (chỉ được cập nhật direct invitee)
      */
     async updateRate(sourceUid: string, targetUid: string, rate: number): Promise<AffiliateResponseDto<any>> {
         try {
+            const targetOverview = await this.getUserOverview(targetUid);
+            if (targetOverview?.refUid !== sourceUid) {
+                throw new ForbiddenException('You can only update the rate of your direct invitees');
+            }
+
             const response: AxiosResponse<AffiliateResponseDto<any>> = await firstValueFrom(
-                this.httpService.post(
-                    `${this.baseUrl}/api/v1/users/update-rate`,
-                    { sourceUid, targetUid, rate },
-                    { headers: this.getHeaders() }
-                )
+                this.httpService.post(`${this.baseUrl}/api/v1/users/update-rate`, { sourceUid, targetUid, rate }, { headers: this.getHeaders() })
             );
             this.logger.log(response.data);
 
             const responseData = response.data;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
             if (responseData.code !== AffiliateErrorCode.SUCCESS) {
                 handleAffiliateError(responseData.code as AffiliateErrorCode, responseData.message);
             }

@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { AffiliateService } from './affiliate.service';
 import { AffiliateController } from './affiliate.controller';
+import { User } from '../users/entities/user.entity';
 
 @Module({
   imports: [
@@ -11,6 +13,7 @@ import { AffiliateController } from './affiliate.controller';
       maxRedirects: 5,
     }),
     ConfigModule,
+    TypeOrmModule.forFeature([User]),
   ],
   controllers: [AffiliateController],
   providers: [AffiliateService],
