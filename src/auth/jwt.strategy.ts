@@ -10,7 +10,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 export class JwtStrategy extends PassportStrategy(Strategy) {
     constructor(
         private configService: ConfigService,
-        @InjectRepository(User) private userRepository: Repository<User>,
+        @InjectRepository(User) private userRepository: Repository<User>
     ) {
         super({
             jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -20,7 +20,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     async validate(payload: any) {
-        const user = await this.userRepository.findOne({ where: { id: payload.sub }, select: ['id', 'email', 'role', 'subscription_tier', 'is_active'] });
+        const user = await this.userRepository.findOne({ where: { id: payload.sub }, select: ['id', 'email', 'role', 'subscription_tier', 'is_active', 'ref_code'] });
 
         if (user && !user.is_active) throw new UnauthorizedException('Tài khoản đã bị khóa');
 

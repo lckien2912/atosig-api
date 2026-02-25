@@ -59,6 +59,9 @@ export class AffiliateInviteeDto {
 
     @ApiProperty({ description: 'Ghi chú', example: 'VIP user' })
     note: string;
+
+    @ApiPropertyOptional({ description: 'Email của invitee', example: 'user@example.com', nullable: true })
+    email: string | null;
 }
 
 export class AffiliateCommissionDto {

@@ -465,7 +465,7 @@ export class CrawlerService {
                                     exchange: signal.exchange,
                                     type: NotificationType.SIGNAL_TP_1,
                                     price: currentPrice,
-                                    change_percent: changePercent,
+                                    change_percent: pnlFormatted,
                                     signal_id: signal.id
                                 });
 
@@ -485,7 +485,7 @@ export class CrawlerService {
                                     exchange: signal.exchange,
                                     type: NotificationType.SIGNAL_TP_2,
                                     price: currentPrice,
-                                    change_percent: changePercent,
+                                    change_percent: pnlFormatted,
                                     signal_id: signal.id
                                 });
 
@@ -507,7 +507,7 @@ export class CrawlerService {
                                     exchange: signal.exchange,
                                     type: NotificationType.SIGNAL_TP_3,
                                     price: currentPrice,
-                                    change_percent: changePercent,
+                                    change_percent: pnlFormatted,
                                     signal_id: signal.id
                                 });
 
@@ -529,7 +529,7 @@ export class CrawlerService {
                                     exchange: signal.exchange,
                                     type: NotificationType.SIGNAL_SL,
                                     price: currentPrice,
-                                    change_percent: changePercent,
+                                    change_percent: pnlFormatted,
                                     signal_id: signal.id
                                 });
 
