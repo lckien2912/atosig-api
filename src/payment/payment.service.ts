@@ -58,15 +58,19 @@ export class PaymentService {
         });
 
         let paymentUrl = '';
+        let qrCodeUrl = '';
         const clientIp = ipAddr === '::1' ? '127.0.0.1' : ipAddr;
 
         switch (dto.gateway) {
             case PaymentGateway.VNPAY:
                 paymentUrl = await this.generateVnpayUrl(transaction, clientIp);
                 break;
-            case PaymentGateway.MOMO:
-                paymentUrl = await this.generateMomoUrl(transaction);
+            case PaymentGateway.MOMO: {
+                const momoResult = await this.generateMomoUrl(transaction);
+                paymentUrl = momoResult.payUrl;
+                qrCodeUrl = momoResult.qrCodeUrl;
                 break;
+            }
             // case PaymentGateway.STRIPE:
             //     paymentUrl = await this.generateStripeSession(transaction);
             //     break;
@@ -79,7 +83,8 @@ export class PaymentService {
 
         return {
             payment_url: paymentUrl,
-            transaction_code: txnCode
+            transaction_code: txnCode,
+            qr_code_url: qrCodeUrl || undefined,
         };
     }
 
@@ -323,15 +328,15 @@ export class PaymentService {
         }
     }
 
-    async generateMomoUrl(txn: PaymentTransaction): Promise<string> {
+    async generateMomoUrl(txn: PaymentTransaction): Promise<{ payUrl: string; qrCodeUrl: string; deeplink: string }> {
         const partnerCode = this.configService.get<string>('MOMO_PARTNER_CODE');
         const accessKey = this.configService.get<string>('MOMO_ACCESS_KEY');
         const secretKey = this.configService.get<string>('MOMO_SECRET_KEY') ?? '';
         const endpoint = this.configService.get<string>('MOMO_ENDPOINT') ?? '';
-        const appUrl = this.configService.get<string>('APP_URL_FE');
         const redirectUrl = this.configService.get<string>('MOMO_RETURN_URL');
 
-        const ipnUrl = `${appUrl}/api/payment/momo/ipn`;
+        const ipnUrl = this.configService.get<string>('MOMO_IPN_URL')
+            || `${this.configService.get<string>('APP_URL')}:${this.configService.get<string>('PORT')}/api/v1/payment/momo/ipn`;
 
         const requestId = txn.transaction_code;
         const orderId = txn.transaction_code;
@@ -367,7 +372,11 @@ export class PaymentService {
             const response = await axios.post(endpoint, requestBody);
 
             if (response.data && response.data.resultCode === 0) {
-                return response.data.payUrl;
+                return {
+                    payUrl: response.data.payUrl,
+                    qrCodeUrl: response.data.qrCodeUrl || '',
+                    deeplink: response.data.deeplink || '',
+                };
             } else {
                 this.logger.error('Momo Error:', response.data);
                 throw new BadRequestException(`Momo Error: ${response.data.message}`);
@@ -375,6 +384,91 @@ export class PaymentService {
         } catch (error) {
             this.logger.error('Call Momo API failed', error);
             throw new InternalServerErrorException('Cannot connect to Momo Gateway');
+        }
+    }
+
+    async getTransactionStatus(txnCode: string, userId: string) {
+        const transaction = await this.paymentRepo.findOne({
+            where: { transaction_code: txnCode, user_id: userId },
+        });
+        if (!transaction) throw new NotFoundException('Transaction not found');
+
+        // If still PENDING and gateway is MOMO, query MoMo's API to check real status
+        if (transaction.status === PaymentStatus.PENDING && transaction.gateway === PaymentGateway.MOMO) {
+            try {
+                const queryResult = await this.queryMomoTransactionStatus(transaction);
+                if (queryResult !== null) {
+                    const isSuccess = queryResult.resultCode === 0;
+                    const gatewayTxnId = queryResult.transId?.toString() || '';
+
+                    // Update transaction directly (bypass IPN signature check)
+                    await this.updateTransactionStatus(txnCode, gatewayTxnId, isSuccess, PaymentGateway.MOMO, queryResult);
+
+                    // Re-fetch updated transaction
+                    const updated = await this.paymentRepo.findOne({
+                        where: { transaction_code: txnCode, user_id: userId },
+                    });
+                    if (updated) {
+                        return {
+                            transaction_code: updated.transaction_code,
+                            status: updated.status,
+                            gateway: updated.gateway,
+                            amount: updated.amount,
+                            updated_at: updated.updated_at,
+                        };
+                    }
+                }
+            } catch (err) {
+                this.logger.warn(`Failed to query MoMo status for ${txnCode}: ${err.message}`);
+            }
+        }
+
+        return {
+            transaction_code: transaction.transaction_code,
+            status: transaction.status,
+            gateway: transaction.gateway,
+            amount: transaction.amount,
+            updated_at: transaction.updated_at,
+        };
+    }
+
+    private async queryMomoTransactionStatus(transaction: PaymentTransaction): Promise<any | null> {
+        const partnerCode = this.configService.get<string>('MOMO_PARTNER_CODE');
+        const accessKey = this.configService.get<string>('MOMO_ACCESS_KEY');
+        const secretKey = this.configService.get<string>('MOMO_SECRET_KEY') ?? '';
+
+        const requestId = `${transaction.transaction_code}_query_${Date.now()}`;
+        const orderId = transaction.transaction_code;
+
+        const rawSignature = `accessKey=${accessKey}&orderId=${orderId}&partnerCode=${partnerCode}&requestId=${requestId}`;
+        const signature = crypto.createHmac('sha256', secretKey)
+            .update(rawSignature)
+            .digest('hex');
+
+        const endpoint = this.configService.get<string>('MOMO_ENDPOINT')?.replace('/create', '/query') ?? '';
+
+        this.logger.log(`Querying MoMo status for ${orderId} at ${endpoint}`);
+
+        try {
+            const response = await axios.post(endpoint, {
+                partnerCode,
+                requestId,
+                orderId,
+                signature,
+                lang: 'vi',
+            });
+
+            this.logger.log(`MoMo query result for ${orderId}: resultCode=${response.data?.resultCode}, message=${response.data?.message}`);
+
+            // resultCode 0 = success, 1000 = pending/initiated
+            if (response.data && response.data.resultCode !== 1000) {
+                return response.data;
+            }
+
+            return null; // Still pending
+        } catch (err) {
+            this.logger.warn(`MoMo query API failed for ${orderId}: ${err.message}`);
+            return null;
         }
     }
 

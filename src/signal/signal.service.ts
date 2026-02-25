@@ -59,7 +59,7 @@ export class SignalService {
             'DESC'
         );
 
-        queryBuilder.addOrderBy("signal.created_at", "DESC");
+        queryBuilder.addOrderBy("signal.signal_date", "DESC");
 
         queryBuilder.skip(skip).take(limit);
 

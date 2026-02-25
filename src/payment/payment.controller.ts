@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Query, UseGuards, Request, Res } from '@nestjs/common';
+import { Controller, Post, Body, Get, Query, UseGuards, Request, Res, Param } from '@nestjs/common';
 import { PaymentService } from './payment.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -58,8 +58,9 @@ export class PaymentController {
 
     @Post('momo/ipn')
     @ApiOperation({ summary: 'Webhook xử lý kết quả MOMO' })
-    async momoIpn(@Body() body: any) {
-        return this.paymentService.processPaymentCallback(PaymentGateway.MOMO, body);
+    async momoIpn(@Body() body: any, @Res() res) {
+        await this.paymentService.processPaymentCallback(PaymentGateway.MOMO, body);
+        return res.status(204).send();
     }
 
     @Get('momo/return')
@@ -70,6 +71,17 @@ export class PaymentController {
         } else {
             return res.json({ message: 'Thanh toán thất bại', data: query });
         }
+    }
+
+    @Get('status/:transactionCode')
+    @UseGuards(JwtAuthGuard)
+    @ApiBearerAuth('access-token')
+    @ApiOperation({ summary: 'Kiểm tra trạng thái thanh toán (Polling fallback)' })
+    async getPaymentStatus(
+        @Request() req,
+        @Param('transactionCode') transactionCode: string,
+    ) {
+        return this.paymentService.getTransactionStatus(transactionCode, req.user.id);
     }
 
     @Get('mock-success')
