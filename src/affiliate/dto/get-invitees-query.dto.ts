@@ -18,10 +18,15 @@ export class GetInviteesQueryDto {
     @Max(100)
     size?: number = 10;
 
-    @ApiPropertyOptional({ description: 'Từ khóa tìm kiếm (email)', example: 'user@example.com' })
+    @ApiPropertyOptional({ description: 'Tìm kiếm theo invitee code, email hoặc số điện thoại', example: 'user@example.com' })
     @IsOptional()
     @IsString()
-    keyword?: string;
+    search?: string;
+
+    @ApiPropertyOptional({ description: 'Lọc theo tên gói dịch vụ', example: 'PREMIUM' })
+    @IsOptional()
+    @IsString()
+    package?: string;
 
     @ApiPropertyOptional({ description: 'Level của affiliate', example: 1 })
     @IsOptional()

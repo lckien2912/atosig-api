@@ -1,8 +1,9 @@
-import { Controller, Get, Query, UseGuards, Post, Body, Req } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Post, Body, Req, Param, Patch } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/auth/guards/roles.guard';
 import { AffiliateService } from './affiliate.service';
-import { UpdateRateDto, GetInviteesQueryDto, GetCommissionsQueryDto, AffiliateResponseDto } from './dto';
+import { UpdateRateDto, GetInviteesQueryDto, GetCommissionsQueryDto, AffiliateResponseDto, CreateWithdrawalRequestDto, GetWithdrawalsQueryDto, ProcessWithdrawalDto } from './dto';
 
 @ApiTags('Affiliate')
 @Controller('affiliate')
@@ -32,7 +33,9 @@ export class AffiliateController {
                 totalInviteesBuy: 0,
                 userBuy: 0,
                 totalCommissions: 0,
-                note: ''
+                note: '',
+                totalWithdrawn: 0,
+                availableToWithdraw: 0
             }
         );
     }
@@ -68,5 +71,45 @@ export class AffiliateController {
     async updateRate(@Req() req: any, @Body() updateRateDto: UpdateRateDto): Promise<AffiliateResponseDto<any>> {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
         return await this.affiliateService.updateRate(req.user.ref_code, updateRateDto.targetUid, updateRateDto.rate);
+    }
+
+    @Post('withdrawals/request')
+    @UseGuards(JwtAuthGuard)
+    @ApiOperation({ summary: 'Yêu cầu rút tất cả commission AVAILABLE' })
+    @ApiResponse({ status: 201, description: 'Yêu cầu thành công' })
+    @ApiResponse({ status: 400, description: 'Không có commission để rút' })
+    async requestWithdrawal(@Req() req: any, @Body() dto: CreateWithdrawalRequestDto) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        return await this.affiliateService.requestWithdrawal(req.user.ref_code as string, dto);
+    }
+
+    @Get('withdrawals')
+    @UseGuards(JwtAuthGuard)
+    @ApiOperation({ summary: 'Lấy danh sách withdrawal của user hiện tại' })
+    @ApiResponse({ status: 200, description: 'Thành công' })
+    async getUserWithdrawals(@Req() req: any, @Query() query: GetWithdrawalsQueryDto) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        return await this.affiliateService.getUserWithdrawals(req.user.ref_code as string, query);
+    }
+
+    @Get('admin/withdrawals')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @ApiOperation({ summary: '[Admin] Lấy tất cả withdrawal entries' })
+    @ApiResponse({ status: 200, description: 'Thành công' })
+    @ApiResponse({ status: 403, description: 'Forbidden' })
+    async getAllWithdrawals(@Query() query: GetWithdrawalsQueryDto) {
+        return await this.affiliateService.getAllWithdrawals(query);
+    }
+
+    @Patch('admin/withdrawals/:id')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @ApiOperation({ summary: '[Admin] Chấp nhận hoặc từ chối withdrawal' })
+    @ApiResponse({ status: 200, description: 'Xử lý thành công' })
+    @ApiResponse({ status: 400, description: 'Bad Request' })
+    @ApiResponse({ status: 403, description: 'Forbidden' })
+    @ApiResponse({ status: 404, description: 'Not Found' })
+    async processWithdrawal(@Param('id') id: string, @Req() req: any, @Body() dto: ProcessWithdrawalDto) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        return await this.affiliateService.processWithdrawal(id, req.user.id as string, dto);
     }
 }
