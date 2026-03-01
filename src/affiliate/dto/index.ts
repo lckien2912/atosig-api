@@ -5,3 +5,6 @@ export * from './update-rate.dto';
 export * from './get-invitees-query.dto';
 export * from './get-commissions-query.dto';
 export * from './get-user-param.dto';
+export * from './create-withdrawal-request.dto';
+export * from './get-withdrawals-query.dto';
+export * from './process-withdrawal.dto';

@@ -11,31 +11,35 @@ import { UserSubscription } from './pricing/entities/user-subscription.entity';
 import { PaymentTransaction } from './payment/entities/payment-transaction.entity';
 import { Notification } from './notification/entities/notification.entity';
 import { NotificationRead } from './notification/entities/notification-read.entity';
+import { AffiliateWithdrawal } from './affiliate/entities/affiliate-withdrawal.entity';
+import { AffiliateWithdrawalRequest } from './affiliate/entities/affiliate-withdrawal-request.entity';
 
 const isCompiled = __filename.endsWith('.js');
 const migrationsDir = isCompiled ? join(__dirname, 'migrations', '*.js') : join(__dirname, 'migrations', '*.ts');
 
 export default new DataSource({
-  type: 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432', 10),
-  username: process.env.DB_USERNAME || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres',
-  database: process.env.DB_DATABASE || 'atosig',
-  entities: [
-    User,
-    VerificationCode,
-    Signal,
-    UserFavorite,
-    Company,
-    SubscriptionPlan,
-    UserSubscription,
-    PaymentTransaction,
-    Notification,
-    NotificationRead,
-  ],
-  migrations: [migrationsDir],
-  migrationsTableName: 'migrations',
-  logging: true,
-  synchronize: false,
+    type: 'postgres',
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432', 10),
+    username: process.env.DB_USERNAME || 'postgres',
+    password: process.env.DB_PASSWORD || 'postgres',
+    database: process.env.DB_DATABASE || 'atosig',
+    entities: [
+        User,
+        VerificationCode,
+        Signal,
+        UserFavorite,
+        Company,
+        SubscriptionPlan,
+        UserSubscription,
+        PaymentTransaction,
+        Notification,
+        NotificationRead,
+        AffiliateWithdrawal,
+        AffiliateWithdrawalRequest
+    ],
+    migrations: [migrationsDir],
+    migrationsTableName: 'migrations',
+    logging: true,
+    synchronize: false
 });

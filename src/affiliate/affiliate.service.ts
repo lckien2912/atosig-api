@@ -1,4 +1,4 @@
-import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -13,11 +13,21 @@ import {
     AffiliateCommissionDto,
     AffiliateResponseDto,
     GetInviteesQueryDto,
-    GetCommissionsQueryDto
+    GetCommissionsQueryDto,
+    GetWithdrawalsQueryDto,
+    ProcessWithdrawalDto,
+    CreateWithdrawalRequestDto,
+    CreateOrderResponseDto
 } from './dto';
 import { AffiliateErrorCode } from './enums/affiliate-error-code.enum';
+import { WithdrawalStatus } from './enums/withdrawal-status.enum';
+import { WithdrawalRequestStatus } from './enums/withdrawal-request-status.enum';
 import { handleAffiliateError, handleAxiosError } from './helpers/affiliate-error-handler';
 import { User } from '../users/entities/user.entity';
+import { AffiliateWithdrawal } from './entities/affiliate-withdrawal.entity';
+import { AffiliateWithdrawalRequest } from './entities/affiliate-withdrawal-request.entity';
+import { UserSubscription } from '../pricing/entities/user-subscription.entity';
+import { SubscriptionStatus } from '../pricing/enums/pricing.enum';
 
 @Injectable()
 export class AffiliateService {
@@ -30,7 +40,13 @@ export class AffiliateService {
         private readonly httpService: HttpService,
         private readonly configService: ConfigService,
         @InjectRepository(User)
-        private readonly userRepository: Repository<User>
+        private readonly userRepository: Repository<User>,
+        @InjectRepository(AffiliateWithdrawal)
+        private readonly withdrawalRepository: Repository<AffiliateWithdrawal>,
+        @InjectRepository(AffiliateWithdrawalRequest)
+        private readonly withdrawalRequestRepository: Repository<AffiliateWithdrawalRequest>,
+        @InjectRepository(UserSubscription)
+        private readonly subscriptionRepository: Repository<UserSubscription>
     ) {
         this.baseUrl = this.configService.get<string>('AFFILIATE_SERVICE_URL') || 'http://localhost:8080';
         this.apiKey = this.configService.get<string>('AFFILIATE_API_KEY') || '';
@@ -96,7 +112,7 @@ export class AffiliateService {
      * Tạo đơn hàng affiliate để tính commission cho referrer
      * Được gọi sau khi payment thành công
      */
-    async createOrder(uid: string, orderId: string, orderName: string, orderPayPrice: number, orderActuallyPaid: number): Promise<AffiliateResponseDto<any>> {
+    async createOrder(uid: string, orderId: string, orderName: string, orderPayPrice: number, orderActuallyPaid: number): Promise<AffiliateResponseDto<CreateOrderResponseDto>> {
         try {
             const dto: CreateAffiliateOrderDto = {
                 uid,
@@ -106,7 +122,7 @@ export class AffiliateService {
                 orderActuallyPaid
             };
 
-            const response: AxiosResponse<AffiliateResponseDto<any>> = await firstValueFrom(
+            const response: AxiosResponse<AffiliateResponseDto<CreateOrderResponseDto>> = await firstValueFrom(
                 this.httpService.post(`${this.baseUrl}/api/v1/orders`, dto, {
                     headers: this.getHeaders()
                 })
@@ -119,6 +135,39 @@ export class AffiliateService {
             }
 
             this.logger.log(`Created affiliate order: ${orderId} for user: ${uid}`);
+
+            // Create local commission entries for ALL ancestor levels using the external service response
+            try {
+                const commissions = responseData.data?.commissions ?? [];
+                if (commissions.length > 0) {
+                    // Idempotency: find existing entries for this order
+                    const existingEntries = await this.withdrawalRepository.find({
+                        where: { source_order_id: orderId },
+                        select: ['affiliate_uid']
+                    });
+                    const existingUids = new Set(existingEntries.map(e => e.affiliate_uid));
+
+                    const newEntries = commissions
+                        .filter(c => c.amount > 0 && !existingUids.has(c.uid))
+                        .map(c =>
+                            this.withdrawalRepository.create({
+                                affiliate_uid: c.uid,
+                                amount: c.amount,
+                                status: WithdrawalStatus.AVAILABLE,
+                                source_order_id: orderId,
+                                level: c.level
+                            })
+                        );
+
+                    if (newEntries.length > 0) {
+                        await this.withdrawalRepository.save(newEntries);
+                        this.logger.log(`Created ${newEntries.length} commission entries for order: ${orderId} — ` + newEntries.map(e => `${e.affiliate_uid} (L${e.level}): ${e.amount}`).join(', '));
+                    }
+                }
+            } catch (commissionError) {
+                this.logger.error(`Failed to create local commission entries for order: ${orderId}`, commissionError instanceof Error ? commissionError.message : String(commissionError));
+            }
+
             return responseData;
         } catch (error) {
             this.logger.error(`Failed to create affiliate order: ${orderId}`, error instanceof Error ? error.message : String(error));
@@ -151,7 +200,27 @@ export class AffiliateService {
                 handleAffiliateError(responseData.code as AffiliateErrorCode, responseData.message);
             }
 
-            return responseData.data;
+            const overviewData = responseData.data;
+
+            const [available, withdrawn] = await Promise.all([
+                this.withdrawalRepository
+                    .createQueryBuilder('w')
+                    .select('SUM(w.amount)', 'total')
+                    .where('w.affiliate_uid = :uid AND w.status = :status', { uid, status: WithdrawalStatus.AVAILABLE })
+                    .getRawOne(),
+                this.withdrawalRepository
+                    .createQueryBuilder('w')
+                    .select('SUM(w.amount)', 'total')
+                    .innerJoin('w.withdrawal_request', 'r', 'r.status = :reqStatus', { reqStatus: WithdrawalRequestStatus.ACCEPTED })
+                    .where('w.affiliate_uid = :uid AND w.status = :status', { uid, status: WithdrawalStatus.WITHDRAWN })
+                    .getRawOne()
+            ]);
+
+            return {
+                ...overviewData,
+                totalWithdrawn: Number(withdrawn?.total ?? 0),
+                availableToWithdraw: Number(available?.total ?? 0)
+            };
         } catch (error) {
             this.logger.error(`Failed to get affiliate overview for user: ${uid}`, error instanceof Error ? error.message : String(error));
             if (error instanceof AxiosError) {
@@ -176,36 +245,143 @@ export class AffiliateService {
                 query.toDate = defaultToDate.toISOString().split('T')[0];
             }
 
-            const response: AxiosResponse<AffiliateResponseDto<AffiliateInviteeDto[]>> = await firstValueFrom(
-                this.httpService.get(`${this.baseUrl}/api/v1/users/invitees/${uid}`, {
-                    headers: this.getHeaders(),
-                    params: query
-                })
-            );
+            const { search, page = 1, size = 10, level, fromDate, toDate } = query;
 
-            const responseData = response.data;
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
-            if (responseData.code !== AffiliateErrorCode.SUCCESS) {
-                handleAffiliateError(responseData.code as AffiliateErrorCode, responseData.message);
+            const packageFilter = query['package'];
+            const useLocalFilter = !!(search || packageFilter);
+
+            const externalParams: Record<string, any> = { level, fromDate, toDate };
+
+            let invitees: AffiliateInviteeDto[];
+            let total: number;
+            let responsePage: number;
+            let responseSize: number;
+
+            if (useLocalFilter) {
+                // Path A: fetch all (up to 1000) for local filtering
+                externalParams.page = 1;
+                externalParams.size = 1000;
+
+                const response: AxiosResponse<AffiliateResponseDto<AffiliateInviteeDto[]>> = await firstValueFrom(
+                    this.httpService.get(`${this.baseUrl}/api/v1/users/invitees/${uid}`, {
+                        headers: this.getHeaders(),
+                        params: externalParams
+                    })
+                );
+
+                const responseData = response.data;
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
+                if (responseData.code !== AffiliateErrorCode.SUCCESS) {
+                    handleAffiliateError(responseData.code as AffiliateErrorCode, responseData.message);
+                }
+
+                const allInvitees = responseData.data || [];
+                const uids = allInvitees.map(i => i.uid);
+                const users = uids.length > 0 ? await this.userRepository.find({ where: { ref_code: In(uids) }, select: ['id', 'ref_code', 'email', 'phone_number', 'subscription_tier'] }) : [];
+                const userMap = new Map(users.map(u => [u.ref_code, u]));
+
+                const userIds = users.map(u => u.id);
+                const subscriptions =
+                    userIds.length > 0
+                        ? await this.subscriptionRepository.find({
+                              where: { user_id: In(userIds), status: SubscriptionStatus.ACTIVE },
+                              relations: ['plan']
+                          })
+                        : [];
+                const subMap = new Map(subscriptions.map(s => [s.user_id, s]));
+
+                // Apply local filters
+                let filtered = allInvitees.map(i => {
+                    const user = userMap.get(i.uid);
+                    const sub = user ? subMap.get(user.id) : null;
+                    return { invitee: i, user, sub };
+                });
+
+                if (search) {
+                    const term = search.toLowerCase();
+                    filtered = filtered.filter(({ invitee, user }) => {
+                        const codeMatch = invitee.uid?.toLowerCase().includes(term);
+                        const emailMatch = user?.email?.toLowerCase().includes(term);
+                        const phoneMatch = user?.phone_number?.toLowerCase().includes(term);
+                        return codeMatch || emailMatch || phoneMatch;
+                    });
+                }
+
+                if (packageFilter) {
+                    filtered = filtered.filter(({ sub }) => sub?.plan?.name === packageFilter);
+                }
+
+                total = filtered.length;
+                const skip = (page - 1) * size;
+                const pageSlice = filtered.slice(skip, skip + size);
+
+                invitees = pageSlice.map(({ invitee, user, sub }) => ({
+                    ...invitee,
+                    email: user?.email ?? null,
+                    phone: user?.phone_number ?? null,
+                    package: sub?.plan?.name ?? null
+                }));
+
+                responsePage = page;
+                responseSize = size;
+            } else {
+                // Path B: delegate pagination entirely to external service; map search → keyword
+                if (search) externalParams.keyword = search;
+                externalParams.page = page;
+                externalParams.size = size;
+
+                const response: AxiosResponse<AffiliateResponseDto<AffiliateInviteeDto[]>> = await firstValueFrom(
+                    this.httpService.get(`${this.baseUrl}/api/v1/users/invitees/${uid}`, {
+                        headers: this.getHeaders(),
+                        params: externalParams
+                    })
+                );
+
+                const responseData = response.data;
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
+                if (responseData.code !== AffiliateErrorCode.SUCCESS) {
+                    handleAffiliateError(responseData.code as AffiliateErrorCode, responseData.message);
+                }
+
+                total = responseData.pagination?.total || 0;
+                responsePage = responseData.pagination?.current || 1;
+                responseSize = responseData.pagination?.size || size;
+
+                const rawInvitees = responseData.data || [];
+                const uids = rawInvitees.map(i => i.uid);
+                const users = uids.length > 0 ? await this.userRepository.find({ where: { ref_code: In(uids) }, select: ['id', 'ref_code', 'email', 'phone_number', 'subscription_tier'] }) : [];
+                const userMap = new Map(users.map(u => [u.ref_code, u]));
+
+                const userIds = users.map(u => u.id);
+                const subscriptions =
+                    userIds.length > 0
+                        ? await this.subscriptionRepository.find({
+                              where: { user_id: In(userIds), status: SubscriptionStatus.ACTIVE },
+                              relations: ['plan']
+                          })
+                        : [];
+                const subMap = new Map(subscriptions.map(s => [s.user_id, s]));
+
+                invitees = rawInvitees.map(i => {
+                    const user = userMap.get(i.uid);
+                    const sub = user ? subMap.get(user.id) : null;
+                    return {
+                        ...i,
+                        email: user?.email ?? null,
+                        phone: user?.phone_number ?? null,
+                        package: sub?.plan?.name ?? null
+                    };
+                });
             }
 
-            const total = responseData.pagination?.total || 0;
-            const page = responseData.pagination?.current || 1;
-            const limit = responseData.pagination?.size || 0;
-            const totalPages = Math.ceil(total / limit);
-
-            const invitees = responseData.data || [];
-            const uids = invitees.map(i => i.uid);
-            const users = uids.length > 0 ? await this.userRepository.find({ where: { ref_code: In(uids) }, select: ['ref_code', 'email'] }) : [];
-            const emailByUid = new Map(users.map(u => [u.ref_code, u.email]));
-            const data = invitees.map(i => ({ ...i, email: emailByUid.get(i.uid) ?? null }));
+            const totalPages = Math.ceil(total / responseSize);
 
             return {
-                data,
+                data: invitees,
                 meta: {
                     total,
-                    page: Number(page),
-                    limit: Number(limit),
+                    page: Number(responsePage),
+                    limit: Number(responseSize),
                     totalPages: Number(totalPages)
                 }
             };
@@ -310,5 +486,118 @@ export class AffiliateService {
             }
             throw error;
         }
+    }
+
+    /**
+     * User requests withdrawal of all AVAILABLE commissions
+     */
+    async requestWithdrawal(affiliateUid: string, dto: CreateWithdrawalRequestDto) {
+        const available = await this.withdrawalRepository.find({
+            where: { affiliate_uid: affiliateUid, status: WithdrawalStatus.AVAILABLE }
+        });
+        if (available.length === 0) throw new BadRequestException('No available commission to withdraw');
+
+        const totalAmount = available.reduce((sum, e) => sum + Number(e.amount), 0);
+
+        // Create the withdrawal request
+        const request = this.withdrawalRequestRepository.create({
+            affiliate_uid: affiliateUid,
+            total_amount: totalAmount,
+            status: WithdrawalRequestStatus.PENDING,
+            user_note: dto.note ?? null
+        });
+        await this.withdrawalRequestRepository.save(request);
+
+        // Link commissions to the request and mark as WITHDRAWN
+        const commissionIds = available.map(e => e.id);
+        await this.withdrawalRepository.update(commissionIds, {
+            status: WithdrawalStatus.WITHDRAWN,
+            withdrawal_request_id: request.id
+        });
+
+        return request;
+    }
+
+    /**
+     * Get paginated withdrawal requests for a user
+     */
+    async getUserWithdrawals(affiliateUid: string, query: GetWithdrawalsQueryDto) {
+        const page = query.page ?? 1;
+        const limit = query.limit ?? 10;
+        const skip = (page - 1) * limit;
+
+        const where: any = { affiliate_uid: affiliateUid };
+        if (query.status) where.status = query.status;
+
+        const [data, total] = await this.withdrawalRequestRepository.findAndCount({
+            where,
+            order: { created_at: 'DESC' },
+            skip,
+            take: limit
+        });
+
+        return {
+            data,
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+            }
+        };
+    }
+
+    /**
+     * Admin: get all withdrawal requests (paginated)
+     */
+    async getAllWithdrawals(query: GetWithdrawalsQueryDto) {
+        const page = query.page ?? 1;
+        const limit = query.limit ?? 10;
+        const skip = (page - 1) * limit;
+
+        const where: any = {};
+        if (query.status) where.status = query.status;
+
+        const [data, total] = await this.withdrawalRequestRepository.findAndCount({
+            where,
+            order: { created_at: 'DESC' },
+            skip,
+            take: limit
+        });
+
+        return {
+            data,
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+            }
+        };
+    }
+
+    /**
+     * Admin: accept or reject a withdrawal request
+     */
+    async processWithdrawal(id: string, adminUserId: string, dto: ProcessWithdrawalDto) {
+        const request = await this.withdrawalRequestRepository.findOne({ where: { id } });
+        if (!request) throw new NotFoundException(`Withdrawal request ${id} not found`);
+        if (request.status !== WithdrawalRequestStatus.PENDING) {
+            throw new BadRequestException(`Cannot process withdrawal request in status: ${request.status}. Must be PENDING`);
+        }
+
+        request.status = dto.status;
+        request.admin_note = dto.admin_note ?? null;
+        request.processed_by = adminUserId;
+        request.processed_at = new Date();
+        await this.withdrawalRequestRepository.save(request);
+
+        // If rejected, unlink commissions and revert to AVAILABLE
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
+        if (dto.status === WithdrawalRequestStatus.REJECTED) {
+            await this.withdrawalRepository.update({ withdrawal_request_id: request.id }, { status: WithdrawalStatus.AVAILABLE, withdrawal_request_id: null });
+        }
+
+        return request;
     }
 }

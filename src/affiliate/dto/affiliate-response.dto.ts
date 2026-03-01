@@ -62,6 +62,9 @@ export class AffiliateInviteeDto {
 
     @ApiPropertyOptional({ description: 'Email của invitee', example: 'user@example.com', nullable: true })
     email: string | null;
+
+    @ApiPropertyOptional({ description: 'Gói dịch vụ của invitee', example: 'PREMIUM', nullable: true })
+    package?: string | null;
 }
 
 export class AffiliateCommissionDto {
@@ -116,6 +119,31 @@ export class AffiliateResponseDto<T> {
 
     @ApiPropertyOptional({ description: 'Thông tin phân trang', type: AffiliatePaginationDto })
     pagination?: AffiliatePaginationDto;
+}
+
+export class OrderCommissionDto {
+    @ApiProperty({ description: 'Affiliate UID that earns the commission', example: 'A9YCPL01' })
+    uid: string;
+
+    @ApiProperty({ description: 'Level in the affiliate tree (1 = direct referrer)', example: 1 })
+    level: number;
+
+    @ApiProperty({ description: 'Commission percent applied', example: 10 })
+    percent: number;
+
+    @ApiProperty({ description: 'Commission amount earned', example: 499900 })
+    amount: number;
+}
+
+export class CreateOrderResponseDto {
+    @ApiProperty({ description: 'Order ID in external service' })
+    id: string;
+
+    @ApiProperty({ description: 'Buyer UID' })
+    uid: string;
+
+    @ApiProperty({ description: 'Commissions earned by each ancestor', type: [OrderCommissionDto] })
+    commissions: OrderCommissionDto[];
 }
 
 // Specific response classes for Swagger documentation
