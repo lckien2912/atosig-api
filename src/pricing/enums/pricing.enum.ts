@@ -4,3 +4,8 @@ export enum SubscriptionStatus {
     EXPIRED = 'EXPIRED',     // Hết hạn
     CANCELLED = 'CANCELLED'  // Đã hủy
 }
+
+export enum SubscriptionSource {
+    USER = 'USER',
+    ADMIN = 'ADMIN'
+}

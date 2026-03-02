@@ -12,8 +12,8 @@ import { SubscriptionStatus } from 'src/pricing/enums/pricing.enum';
 export class UsersService {
     constructor(
         @InjectRepository(User)
-        private usersRepository: Repository<User>,
-    ) { }
+        private usersRepository: Repository<User>
+    ) {}
 
     // =================================================================
     // 1. USER (Profile cá nhân)
@@ -47,7 +47,6 @@ export class UsersService {
     // 2. ADMIN (Quản trị)
     // =================================================================
 
-
     /**
      * Get List User
      * @returns User[]
@@ -59,30 +58,14 @@ export class UsersService {
         const queryBuilder = this.usersRepository.createQueryBuilder('user');
 
         if (search) {
-            queryBuilder.where(
-                "(user.full_name ILIKE :search OR user.email ILIKE :search OR user.phone_number ILIKE :search)",
-                { search: `%${search}%` }
-            );
+            queryBuilder.where('(user.full_name ILIKE :search OR user.email ILIKE :search OR user.phone_number ILIKE :search)', { search: `%${search}%` });
         }
 
         queryBuilder
-            .leftJoinAndMapOne(
-                'user.subscription',
-                UserSubscription,
-                'sub',
-                'sub.user_id = user.id AND sub.status = :activeStatus',
-                { activeStatus: SubscriptionStatus.ACTIVE }
-            )
+            .leftJoinAndMapOne('user.subscription', UserSubscription, 'sub', 'sub.user_id = user.id AND sub.status = :activeStatus', { activeStatus: SubscriptionStatus.ACTIVE })
             .leftJoin('sub.plan', 'plan')
-            .addSelect([
-                'sub.id',
-                'sub.payment_method',
-                'plan.id',
-                'plan.name',
-                'plan.price',
-                'plan.discount_percentage',
-            ])
-            .orderBy("user.created_at", "DESC")
+            .addSelect(['sub.id', 'sub.payment_method', 'sub.source', 'plan.id', 'plan.name', 'plan.price', 'plan.discount_percentage'])
+            .orderBy('user.created_at', 'DESC')
             .skip(skip)
             .take(limit);
 
@@ -101,8 +84,8 @@ export class UsersService {
 
     /**
      * Deactivate User
-     * @param id 
-     * @returns 
+     * @param id
+     * @returns
      */
     async deactivate(id: string): Promise<void> {
         const user = await this.findOne(id);
@@ -127,6 +110,4 @@ export class UsersService {
         user.status = UserStatus.ACTIVE;
         await this.usersRepository.save(user);
     }
-
-
 }

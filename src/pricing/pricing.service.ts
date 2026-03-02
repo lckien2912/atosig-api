@@ -7,7 +7,7 @@ import { CreatePlanDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
 import { User } from '../users/entities/user.entity';
 import moment, { now } from 'moment';
-import { SubscriptionStatus } from './enums/pricing.enum';
+import { SubscriptionSource, SubscriptionStatus } from './enums/pricing.enum';
 import { UserSubscriptionTier } from '../users/enums/user-status.enum';
 
 @Injectable()
@@ -225,5 +225,138 @@ export class PricingService {
             relations: ['plan'],
             order: { created_at: 'DESC' }
         });
+    }
+
+    // ================================
+    // ADMIN: NÂNG CẤP GÓI CHO USER
+    // ================================
+
+    /**
+     * Admin nâng cấp gói cho user (không qua thanh toán)
+     */
+    async adminUpgrade(userId: string, planId: string) {
+        const plan = await this.planRepository.findOne({ where: { id: planId, is_active: true } });
+        if (!plan) throw new NotFoundException('Gói dịch vụ không tồn tại hoặc đã ngừng bán');
+
+        const userRepo = this.dataSource.getRepository(User);
+        const user = await userRepo.findOne({ where: { id: userId } });
+        if (!user) throw new NotFoundException('Người dùng không tồn tại');
+
+        // Không cho phép nâng cấp nếu user đang có gói tự mua
+        const now = new Date();
+        const userPurchasedSub = await this.subscriptionRepository.findOne({
+            where: {
+                user_id: userId,
+                status: SubscriptionStatus.ACTIVE,
+                source: SubscriptionSource.USER,
+                end_date: MoreThan(now)
+            }
+        });
+        if (userPurchasedSub) throw new BadRequestException('Người dùng đang có gói tự mua, không thể nâng cấp bằng Admin');
+
+        const queryRunner = this.dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
+
+        try {
+            let startDate = now;
+            let endDate = moment(now).add(plan.duration_days, 'days').toDate();
+
+            const currentSub = await this.subscriptionRepository.findOne({
+                where: {
+                    user_id: userId,
+                    status: SubscriptionStatus.ACTIVE,
+                    end_date: MoreThan(now)
+                },
+                order: { end_date: 'DESC' }
+            });
+
+            if (currentSub) {
+                startDate = currentSub.end_date;
+                endDate = moment(startDate).add(plan.duration_days, 'days').toDate();
+            }
+
+            const newSub = this.subscriptionRepository.create({
+                user_id: userId,
+                plan_id: plan.id,
+                amount_paid: 0,
+                start_date: startDate,
+                end_date: endDate,
+                status: SubscriptionStatus.ACTIVE,
+                payment_method: 'ADMIN',
+                transaction_code: `ADMIN_${Date.now()}`,
+                source: SubscriptionSource.ADMIN
+            });
+
+            await queryRunner.manager.save(newSub);
+
+            await queryRunner.manager.update(User, userId, {
+                subscription_tier: plan.tier,
+                subscription_end_date: endDate
+            });
+
+            await queryRunner.commitTransaction();
+
+            return {
+                message: 'Nâng cấp gói thành công',
+                subscription: newSub,
+                plan_name: plan.name,
+                valid_from: startDate,
+                valid_until: endDate
+            };
+
+        } catch (err) {
+            await queryRunner.rollbackTransaction();
+            throw err;
+        } finally {
+            await queryRunner.release();
+        }
+    }
+
+    /**
+     * Admin huỷ gói đã nâng cấp cho user
+     */
+    async adminCancelSubscription(userId: string) {
+        const now = new Date();
+
+        const activeSub = await this.subscriptionRepository.findOne({
+            where: {
+                user_id: userId,
+                status: SubscriptionStatus.ACTIVE,
+                source: SubscriptionSource.ADMIN,
+                end_date: MoreThan(now)
+            },
+            order: { end_date: 'DESC' }
+        });
+
+        if (!activeSub) throw new BadRequestException('Người dùng không có gói Admin đang hoạt động');
+
+        const queryRunner = this.dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
+
+        try {
+            activeSub.status = SubscriptionStatus.CANCELLED;
+            activeSub.updated_at = new Date();
+            await queryRunner.manager.save(activeSub);
+
+            await queryRunner.manager.update(User, userId, {
+                subscription_tier: UserSubscriptionTier.FREE,
+                subscription_end_date: new Date()
+            });
+
+            await queryRunner.commitTransaction();
+
+            return {
+                message: 'Đã huỷ gói dịch vụ thành công',
+                cancellation_date: activeSub.updated_at
+            };
+
+        } catch (err) {
+            await queryRunner.rollbackTransaction();
+            throw err;
+        } finally {
+            await queryRunner.release();
+        }
     }
 }

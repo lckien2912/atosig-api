@@ -3,6 +3,7 @@ import { PricingService } from './pricing.service';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
+import { AdminUpgradeDto } from './dto/admin-upgrade.dto';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -102,5 +103,21 @@ export class PricingController {
     @ApiOperation({ summary: '[ADMIN] Xóa gói dịch vụ' })
     deletePlan(@Param('id') id: string) {
         return this.pricingService.deletePlan(id);
+    }
+
+    @Post('admin/upgrade')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @ApiBearerAuth('access-token')
+    @ApiOperation({ summary: '[ADMIN] Nâng cấp gói cho user (không qua thanh toán)' })
+    adminUpgrade(@Body() dto: AdminUpgradeDto) {
+        return this.pricingService.adminUpgrade(dto.user_id, dto.plan_id);
+    }
+
+    @Patch('admin/cancel/:userId')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @ApiBearerAuth('access-token')
+    @ApiOperation({ summary: '[ADMIN] Huỷ gói Admin đã nâng cấp cho user' })
+    adminCancelSubscription(@Param('userId') userId: string) {
+        return this.pricingService.adminCancelSubscription(userId);
     }
 }
