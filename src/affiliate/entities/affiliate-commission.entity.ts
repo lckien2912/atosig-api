@@ -3,8 +3,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { WithdrawalStatus } from '../enums/withdrawal-status.enum';
 import { AffiliateWithdrawalRequest } from './affiliate-withdrawal-request.entity';
 
-@Entity('affiliate_withdrawals')
-export class AffiliateWithdrawal {
+@Entity('affiliate_commissions')
+export class AffiliateCommission {
     @PrimaryGeneratedColumn('uuid')
     id: string;
 
