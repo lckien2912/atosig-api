@@ -1,7 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn, OneToMany, BeforeInsert, UpdateDateColumn } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { SubscriptionPlan } from './subscription-plan.entity';
-import { SubscriptionStatus } from '../enums/pricing.enum';
+import { SubscriptionSource, SubscriptionStatus } from '../enums/pricing.enum';
 import { PaymentTransaction } from 'src/payment/entities/payment-transaction.entity';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -44,6 +44,9 @@ export class UserSubscription {
 
     @Column({ type: 'varchar', nullable: true })
     transaction_code: string; // Mã giao dịch từ cổng thanh toán
+
+    @Column({ type: 'enum', enum: SubscriptionSource, default: SubscriptionSource.USER })
+    source: SubscriptionSource;
 
     @OneToMany(() => PaymentTransaction, (txn) => txn.subscription)
     transactions: PaymentTransaction[];
