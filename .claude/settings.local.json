@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:developers.momo.vn)",
+      "Bash(find:*)",
+      "mcp__ide__getDiagnostics"
+    ]
+  }
+}

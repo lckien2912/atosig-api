@@ -27,21 +27,21 @@ export class AffiliatePaymentService {
 
     /** Create a payment record, link withdrawal requests to it, and write audit log entries. */
     async createBatch(dto: CreatePaymentBatchDto, adminId: string): Promise<any> {
-        return this.dataSource.transaction(async (manager) => {
+        return this.dataSource.transaction(async manager => {
             // Load & validate requests
             const requests = await manager.find(AffiliateWithdrawalRequest, {
-                where: { id: In(dto.withdrawalRequestIds) },
+                where: { id: In(dto.withdrawalRequestIds) }
             });
 
             if (requests.length !== dto.withdrawalRequestIds.length) {
-                const foundIds = new Set(requests.map((r) => r.id));
-                const missingIds = dto.withdrawalRequestIds.filter((id) => !foundIds.has(id));
+                const foundIds = new Set(requests.map(r => r.id));
+                const missingIds = dto.withdrawalRequestIds.filter(id => !foundIds.has(id));
                 throw new BadRequestException(`Withdrawal requests not found: ${missingIds.join(', ')}`);
             }
 
-            const nonAcceptedRequests = requests.filter((r) => r.status !== WithdrawalRequestStatus.ACCEPTED);
+            const nonAcceptedRequests = requests.filter(r => r.status !== WithdrawalRequestStatus.ACCEPTED);
             if (nonAcceptedRequests.length > 0) {
-                const ids = nonAcceptedRequests.map((r) => r.id);
+                const ids = nonAcceptedRequests.map(r => r.id);
                 throw new BadRequestException(`Withdrawal requests are not in ACCEPTED status: ${ids.join(', ')}`);
             }
 
@@ -57,8 +57,8 @@ export class AffiliatePaymentService {
                     payment_method: dto.paymentMethod,
                     transaction_id: dto.transactionId,
                     notes: dto.notes,
-                    created_by: adminId,
-                }),
+                    created_by: adminId
+                })
             );
 
             // Update each request and create audit log
@@ -75,8 +75,8 @@ export class AffiliatePaymentService {
                         affiliate_uid: request.affiliate_uid,
                         action: AuditAction.MARK_PAID,
                         performed_by: adminId,
-                        note: `Linked to payment batch "${payment.batch_name}"`,
-                    }),
+                        note: `Linked to payment batch "${payment.batch_name}"`
+                    })
                 );
             }
 
@@ -118,19 +118,12 @@ export class AffiliatePaymentService {
     }
 
     /** Paginated list of payments with optional paymentMethod and date range filters. */
-    async list(query: ListPaymentsQueryDto): Promise<{ data: any[]; total: number; page: number; size: number }> {
+    async list(query: ListPaymentsQueryDto): Promise<{ data: any[]; meta: { total: number; page: number; size: number; totalPages: number } }> {
         const qb = this.paymentRepo
             .createQueryBuilder('payment')
             .leftJoin(User, 'creator', 'creator.id = payment.created_by')
             .addSelect('creator.email', 'createdByEmail')
-            .addSelect(
-                (sub) =>
-                    sub
-                        .select('COUNT(*)')
-                        .from(AffiliateWithdrawalRequest, 'wr')
-                        .where('wr.payment_id = payment.id'),
-                'requestCount',
-            );
+            .addSelect(sub => sub.select('COUNT(*)').from(AffiliateWithdrawalRequest, 'wr').where('wr.payment_id = payment.id'), 'requestCount');
 
         if (query.paymentMethod) {
             qb.andWhere('payment.payment_method = :paymentMethod', { paymentMethod: query.paymentMethod });
@@ -152,10 +145,10 @@ export class AffiliatePaymentService {
         const data = raw.entities.map((payment, i) => ({
             ...payment,
             createdByEmail: raw.raw[i]?.createdByEmail ?? null,
-            requestCount: Number(raw.raw[i]?.requestCount ?? 0),
+            requestCount: Number(raw.raw[i]?.requestCount ?? 0)
         }));
 
-        return { data, total, page: query.page, size: query.size };
+        return { data, meta: { total, page: query.page, size: query.size, totalPages: Math.ceil(total / query.size) || 1 } };
     }
 
     /** Single payment with all linked withdrawal requests. */
@@ -173,9 +166,7 @@ export class AffiliatePaymentService {
                 .addSelect('u.phone_number', 'affiliatePhone')
                 .where('request.payment_id = :paymentId', { paymentId: id })
                 .getRawAndEntities(),
-            payment.created_by
-                ? this.dataSource.getRepository(User).findOne({ where: { id: payment.created_by }, select: ['id', 'email'] })
-                : null,
+            payment.created_by ? this.dataSource.getRepository(User).findOne({ where: { id: payment.created_by }, select: ['id', 'email'] }) : null
         ]);
 
         return {
@@ -194,8 +185,8 @@ export class AffiliatePaymentService {
                 affiliateUid: req.affiliate_uid,
                 affiliateEmail: items.raw[i]?.affiliateEmail ?? null,
                 affiliatePhone: items.raw[i]?.affiliatePhone ?? null,
-                amount: req.total_amount,
-            })),
+                amount: req.total_amount
+            }))
         };
     }
 }

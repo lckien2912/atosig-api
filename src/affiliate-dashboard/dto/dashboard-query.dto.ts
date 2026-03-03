@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsDateString, IsEnum, IsOptional } from 'class-validator';
+import { Granularity } from '../enums/granularity.enum';
 
 export class DashboardQueryDto {
     @ApiProperty({ example: '2024-01-01' })
@@ -10,8 +11,8 @@ export class DashboardQueryDto {
     @IsDateString()
     toDate: string;
 
-    @ApiPropertyOptional({ enum: ['day', 'week', 'month'], default: 'day' })
+    @ApiPropertyOptional({ enum: Granularity, default: Granularity.DAY })
     @IsOptional()
-    @IsEnum(['day', 'week', 'month'])
-    granularity?: string = 'day';
+    @IsEnum(Granularity)
+    granularity?: Granularity = Granularity.DAY;
 }

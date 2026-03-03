@@ -107,6 +107,10 @@ The external service tracks multi-level commissions (up to level 3). Local `affi
 | `PENDING`  | Waiting for admin review                       |
 | `ACCEPTED` | Admin approved; funds should be transferred    |
 | `REJECTED` | Admin rejected; linked commissions reverted    |
+| `PAID`     | Payment confirmed (terminal)                   |
+| `REVERTED` | Admin reverted after accept/reject (terminal)  |
+
+See [admin-commission.md](./admin-commission.md) for the full withdrawal request lifecycle (HOLD, approve/reject/revert/mark-paid transitions).
 
 ---
 
@@ -139,6 +143,8 @@ All routes are under `/api/v1/affiliate` and require a valid JWT (`JwtAuthGuard`
 | GET    | `/withdrawals`              | JwtAuthGuard                | User's own withdrawal request history            |
 | GET    | `/admin/withdrawals`        | JwtAuthGuard + RolesGuard   | All withdrawal requests (admin only)             |
 | PATCH  | `/admin/withdrawals/:id`    | JwtAuthGuard + RolesGuard   | Accept or reject a withdrawal request (admin only) |
+
+See also: [admin-affiliate.md](./admin-affiliate.md) for affiliate user management and [admin-commission.md](./admin-commission.md) for expanded withdrawal request management.
 
 ---
 

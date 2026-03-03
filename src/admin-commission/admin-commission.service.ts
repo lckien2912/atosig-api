@@ -33,11 +33,7 @@ export class AdminCommissionService {
         const qb = this.withdrawalRequestRepo
             .createQueryBuilder('req')
             .leftJoin(User, 'affiliateUser', 'affiliateUser.ref_code = req.affiliate_uid')
-            .select([
-                'req.*',
-                'affiliateUser.email AS "affiliateEmail"',
-                'affiliateUser.phone_number AS "affiliatePhone"'
-            ]);
+            .select(['req.*', 'affiliateUser.email AS "affiliateEmail"', 'affiliateUser.phone_number AS "affiliatePhone"']);
 
         if (status && status !== WithdrawalRequestFilterStatus.ALL) {
             qb.andWhere('req.status = :status', { status });
@@ -56,10 +52,7 @@ export class AdminCommissionService {
         }
 
         if (search) {
-            qb.andWhere(
-                '(affiliateUser.email ILIKE :search OR affiliateUser.phone_number ILIKE :search)',
-                { search: `%${search}%` }
-            );
+            qb.andWhere('(affiliateUser.email ILIKE :search OR affiliateUser.phone_number ILIKE :search)', { search: `%${search}%` });
         }
 
         const total = await qb.clone().select('COUNT(*)', 'count').getRawOne();
@@ -86,9 +79,12 @@ export class AdminCommissionService {
                 paymentId: row.payment_id,
                 createdAt: row.created_at
             })),
-            total: parseInt(total?.count ?? '0', 10),
-            page,
-            size
+            meta: {
+                total: parseInt(total?.count ?? '0', 10),
+                totalPages: Math.ceil((parseInt(total?.count ?? '0', 10) || 0) / size),
+                page,
+                size
+            }
         };
     }
 
@@ -101,20 +97,11 @@ export class AdminCommissionService {
 
         const [affiliateUser, commissionEntries, auditLogs] = await Promise.all([
             this.userRepo.findOne({ where: { ref_code: request.affiliate_uid } }),
-            this.commissionRepo
-                .createQueryBuilder('c')
-                .select(['c.id', 'c.amount', 'c.level', 'c.status', 'c.source_order_id'])
-                .where('c.withdrawal_request_id = :id', { id })
-                .getMany(),
+            this.commissionRepo.createQueryBuilder('c').select(['c.id', 'c.amount', 'c.level', 'c.status', 'c.source_order_id']).where('c.withdrawal_request_id = :id', { id }).getMany(),
             this.auditLogRepo
                 .createQueryBuilder('log')
                 .leftJoin(User, 'admin', 'admin.id = log.performed_by')
-                .select([
-                    'log.action AS "action"',
-                    'admin.email AS "performedByEmail"',
-                    'log.note AS "note"',
-                    'log.created_at AS "createdAt"'
-                ])
+                .select(['log.action AS "action"', 'admin.email AS "performedByEmail"', 'log.note AS "note"', 'log.created_at AS "createdAt"'])
                 .where('log.request_id = :id', { id })
                 .orderBy('log.created_at', 'DESC')
                 .getRawMany()
@@ -164,13 +151,15 @@ export class AdminCommissionService {
         request.processed_at = new Date();
         await this.withdrawalRequestRepo.save(request);
 
-        await this.auditLogRepo.save(this.auditLogRepo.create({
-            request_id: id,
-            affiliate_uid: request.affiliate_uid,
-            action: AuditAction.APPROVE,
-            performed_by: adminId,
-            note: dto.adminNote ?? null
-        }));
+        await this.auditLogRepo.save(
+            this.auditLogRepo.create({
+                request_id: id,
+                affiliate_uid: request.affiliate_uid,
+                action: AuditAction.APPROVE,
+                performed_by: adminId,
+                note: dto.adminNote ?? null
+            })
+        );
     }
 
     /** Transition PENDING → REJECTED, revert commissions to AVAILABLE, create audit log entry. */
@@ -199,13 +188,15 @@ export class AdminCommissionService {
             .where('withdrawal_request_id = :id', { id })
             .execute();
 
-        await this.auditLogRepo.save(this.auditLogRepo.create({
-            request_id: id,
-            affiliate_uid: request.affiliate_uid,
-            action: AuditAction.REJECT,
-            performed_by: adminId,
-            note: dto.adminNote
-        }));
+        await this.auditLogRepo.save(
+            this.auditLogRepo.create({
+                request_id: id,
+                affiliate_uid: request.affiliate_uid,
+                action: AuditAction.REJECT,
+                performed_by: adminId,
+                note: dto.adminNote
+            })
+        );
     }
 
     /** Transition PENDING → HOLD with optional holdUntil date, create audit log entry. */
@@ -227,13 +218,15 @@ export class AdminCommissionService {
         request.admin_note = dto.adminNote;
         await this.withdrawalRequestRepo.save(request);
 
-        await this.auditLogRepo.save(this.auditLogRepo.create({
-            request_id: id,
-            affiliate_uid: request.affiliate_uid,
-            action: AuditAction.HOLD,
-            performed_by: adminId,
-            note: dto.adminNote
-        }));
+        await this.auditLogRepo.save(
+            this.auditLogRepo.create({
+                request_id: id,
+                affiliate_uid: request.affiliate_uid,
+                action: AuditAction.HOLD,
+                performed_by: adminId,
+                note: dto.adminNote
+            })
+        );
     }
 
     /** Release hold → clear holdUntil, create audit log entry. */
@@ -249,12 +242,14 @@ export class AdminCommissionService {
         request.admin_note = null;
         await this.withdrawalRequestRepo.save(request);
 
-        await this.auditLogRepo.save(this.auditLogRepo.create({
-            request_id: id,
-            affiliate_uid: request.affiliate_uid,
-            action: AuditAction.RELEASE,
-            performed_by: adminId
-        }));
+        await this.auditLogRepo.save(
+            this.auditLogRepo.create({
+                request_id: id,
+                affiliate_uid: request.affiliate_uid,
+                action: AuditAction.RELEASE,
+                performed_by: adminId
+            })
+        );
     }
 
     /** Transition REJECTED → PENDING, create audit log entry. */
@@ -272,12 +267,14 @@ export class AdminCommissionService {
         request.processed_at = null;
         await this.withdrawalRequestRepo.save(request);
 
-        await this.auditLogRepo.save(this.auditLogRepo.create({
-            request_id: id,
-            affiliate_uid: request.affiliate_uid,
-            action: AuditAction.REVERT,
-            performed_by: adminId
-        }));
+        await this.auditLogRepo.save(
+            this.auditLogRepo.create({
+                request_id: id,
+                affiliate_uid: request.affiliate_uid,
+                action: AuditAction.REVERT,
+                performed_by: adminId
+            })
+        );
     }
 
     /** Batch approve/reject/hold, returns success/failure counts. */
@@ -316,13 +313,16 @@ export class AdminCommissionService {
                         request.processed_at = new Date();
                         await manager.save(request);
 
-                        await manager.save(CommissionAuditLog, manager.create(CommissionAuditLog, {
-                            request_id: id,
-                            affiliate_uid: request.affiliate_uid,
-                            action: AuditAction.APPROVE,
-                            performed_by: adminId,
-                            note: actionDto.adminNote ?? null
-                        }));
+                        await manager.save(
+                            CommissionAuditLog,
+                            manager.create(CommissionAuditLog, {
+                                request_id: id,
+                                affiliate_uid: request.affiliate_uid,
+                                action: AuditAction.APPROVE,
+                                performed_by: adminId,
+                                note: actionDto.adminNote ?? null
+                            })
+                        );
                     } else if (dto.action === BulkActionType.REJECT) {
                         request.status = WithdrawalRequestStatus.REJECTED;
                         request.admin_note = actionDto.adminNote ?? null;
@@ -330,32 +330,39 @@ export class AdminCommissionService {
                         request.processed_at = new Date();
                         await manager.save(request);
 
-                        await manager.createQueryBuilder()
+                        await manager
+                            .createQueryBuilder()
                             .update(AffiliateCommission)
                             .set({ status: WithdrawalStatus.AVAILABLE, withdrawal_request_id: null })
                             .where('withdrawal_request_id = :id', { id })
                             .execute();
 
-                        await manager.save(CommissionAuditLog, manager.create(CommissionAuditLog, {
-                            request_id: id,
-                            affiliate_uid: request.affiliate_uid,
-                            action: AuditAction.REJECT,
-                            performed_by: adminId,
-                            note: actionDto.adminNote ?? null
-                        }));
+                        await manager.save(
+                            CommissionAuditLog,
+                            manager.create(CommissionAuditLog, {
+                                request_id: id,
+                                affiliate_uid: request.affiliate_uid,
+                                action: AuditAction.REJECT,
+                                performed_by: adminId,
+                                note: actionDto.adminNote ?? null
+                            })
+                        );
                     } else if (dto.action === BulkActionType.HOLD) {
                         const holdUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
                         request.hold_until = holdUntil;
                         request.admin_note = actionDto.adminNote ?? null;
                         await manager.save(request);
 
-                        await manager.save(CommissionAuditLog, manager.create(CommissionAuditLog, {
-                            request_id: id,
-                            affiliate_uid: request.affiliate_uid,
-                            action: AuditAction.HOLD,
-                            performed_by: adminId,
-                            note: actionDto.adminNote ?? null
-                        }));
+                        await manager.save(
+                            CommissionAuditLog,
+                            manager.create(CommissionAuditLog, {
+                                request_id: id,
+                                affiliate_uid: request.affiliate_uid,
+                                action: AuditAction.HOLD,
+                                performed_by: adminId,
+                                note: actionDto.adminNote ?? null
+                            })
+                        );
                     }
 
                     success.push(id);

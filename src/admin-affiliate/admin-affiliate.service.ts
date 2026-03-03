@@ -1,10 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
 import { User } from 'src/users/entities/user.entity';
 import { AffiliateWithdrawalRequest } from 'src/affiliate/entities/affiliate-withdrawal-request.entity';
 import { CommissionAuditLog } from 'src/affiliate/entities/commission-audit-log.entity';
 import { AuditAction } from 'src/affiliate/enums/audit-action.enum';
+import { WithdrawalRequestStatus } from 'src/affiliate/enums/withdrawal-request-status.enum';
+import { WithdrawalStatus } from 'src/affiliate/enums/withdrawal-status.enum';
 import { AffiliateStatus } from 'src/users/enums/user-status.enum';
 import { ListAffiliatesQueryDto } from './dto';
 
@@ -16,14 +18,11 @@ export class AdminAffiliateService {
         @InjectRepository(AffiliateWithdrawalRequest)
         private readonly withdrawalRepo: Repository<AffiliateWithdrawalRequest>,
         @InjectRepository(CommissionAuditLog)
-        private readonly auditLogRepo: Repository<CommissionAuditLog>,
+        private readonly auditLogRepo: Repository<CommissionAuditLog>
     ) {}
 
-    async list(query: ListAffiliatesQueryDto) {
-        const { status, search, tier, page, size } = query;
-        const skip = (page - 1) * size;
-
-        const qb = this.userRepo
+    private buildAffiliateMetricsQuery(): SelectQueryBuilder<User> {
+        return this.userRepo
             .createQueryBuilder('user')
             .select([
                 'user.id AS id',
@@ -33,29 +32,34 @@ export class AdminAffiliateService {
                 'user.ref_code AS "refCode"',
                 'user.affiliate_status AS "affiliateStatus"',
                 'user.affiliate_tier AS "affiliateTier"',
-                'user.created_at AS "createdAt"',
+                'user.created_at AS "createdAt"'
             ])
+            .addSelect(`(SELECT COUNT(*) FROM users WHERE ref_from = user.ref_code)`, 'totalInvitees')
+            .addSelect(`(SELECT COALESCE(SUM(amount), 0) FROM affiliate_commissions WHERE affiliate_uid = user.ref_code)`, 'totalCommissionEarned')
+            .addSelect(`(SELECT COALESCE(SUM(total_amount), 0) FROM affiliate_withdrawal_requests WHERE affiliate_uid = user.ref_code AND status = '${WithdrawalRequestStatus.PAID}')`, 'totalPaid')
             .addSelect(
-                `(SELECT COUNT(*) FROM users WHERE ref_from = user.ref_code)`,
-                'totalInvitees',
+                `(SELECT COALESCE(SUM(total_amount), 0) FROM affiliate_withdrawal_requests WHERE affiliate_uid = user.ref_code AND status = '${WithdrawalRequestStatus.ACCEPTED}')`,
+                'pendingPayment'
             )
-            .addSelect(
-                `(SELECT COALESCE(SUM(amount), 0) FROM affiliate_commissions WHERE affiliate_uid = user.ref_code)`,
-                'totalCommissionEarned',
-            )
-            .addSelect(
-                `(SELECT COALESCE(SUM(total_amount), 0) FROM affiliate_withdrawal_requests WHERE affiliate_uid = user.ref_code AND status = 'PAID')`,
-                'totalPaid',
-            )
-            .addSelect(
-                `(SELECT COALESCE(SUM(total_amount), 0) FROM affiliate_withdrawal_requests WHERE affiliate_uid = user.ref_code AND status = 'ACCEPTED')`,
-                'pendingPayment',
-            )
-            .addSelect(
-                `(SELECT COALESCE(SUM(amount), 0) FROM affiliate_commissions WHERE affiliate_uid = user.ref_code AND status = 'AVAILABLE')`,
-                'availableToWithdraw',
-            )
-            .where('user.ref_code IS NOT NULL');
+            .addSelect(`(SELECT COALESCE(SUM(amount), 0) FROM affiliate_commissions WHERE affiliate_uid = user.ref_code AND status = '${WithdrawalStatus.AVAILABLE}')`, 'availableToWithdraw');
+    }
+
+    private castMetricsRow(row: Record<string, any>) {
+        return {
+            ...row,
+            totalInvitees: Number(row.totalInvitees),
+            totalCommissionEarned: Number(row.totalCommissionEarned),
+            totalPaid: Number(row.totalPaid),
+            pendingPayment: Number(row.pendingPayment),
+            availableToWithdraw: Number(row.availableToWithdraw)
+        };
+    }
+
+    async list(query: ListAffiliatesQueryDto) {
+        const { status, search, tier, page, size } = query;
+        const skip = (page - 1) * size;
+
+        const qb = this.buildAffiliateMetricsQuery().where('user.ref_code IS NOT NULL');
 
         if (status && status !== 'ALL') {
             qb.andWhere('user.affiliate_status = :status', { status });
@@ -66,107 +70,43 @@ export class AdminAffiliateService {
         }
 
         if (search) {
-            qb.andWhere(
-                '(user.email ILIKE :search OR user.phone_number ILIKE :search OR user.ref_code ILIKE :search)',
-                { search: `%${search}%` },
-            );
+            qb.andWhere('(user.email ILIKE :search OR user.phone_number ILIKE :search OR user.ref_code ILIKE :search)', { search: `%${search}%` });
         }
 
         const total = await qb.getCount();
 
-        const data = await qb
-            .orderBy('user.created_at', 'DESC')
-            .offset(skip)
-            .limit(size)
-            .getRawMany();
+        const data = await qb.orderBy('user.created_at', 'DESC').offset(skip).limit(size).getRawMany();
 
         return {
-            data: data.map((row) => ({
-                ...row,
-                totalInvitees: Number(row.totalInvitees),
-                totalCommissionEarned: Number(row.totalCommissionEarned),
-                totalPaid: Number(row.totalPaid),
-                pendingPayment: Number(row.pendingPayment),
-                availableToWithdraw: Number(row.availableToWithdraw),
-            })),
-            total,
-            page,
-            size,
+            data: data.map(row => this.castMetricsRow(row)),
+            meta: {
+                total,
+                page,
+                size,
+                totalPages: Math.ceil(total / size) || 1
+            }
         };
     }
 
     async getDetail(uid: string) {
-        const user = await this.userRepo.findOne({ where: { ref_code: uid } });
-        if (!user) {
-            throw new NotFoundException('Affiliate not found');
-        }
-
         const [metrics, recentRequests, statusLogs] = await Promise.all([
-            this.userRepo
-                .createQueryBuilder('user')
-                .select([
-                    'user.id AS id',
-                    'user.full_name AS "fullName"',
-                    'user.email AS email',
-                    'user.phone_number AS "phoneNumber"',
-                    'user.ref_code AS "refCode"',
-                    'user.affiliate_status AS "affiliateStatus"',
-                    'user.affiliate_tier AS "affiliateTier"',
-                    'user.created_at AS "createdAt"',
-                ])
-                .addSelect(
-                    `(SELECT COUNT(*) FROM users WHERE ref_from = user.ref_code)`,
-                    'totalInvitees',
-                )
-                .addSelect(
-                    `(SELECT COALESCE(SUM(amount), 0) FROM affiliate_commissions WHERE affiliate_uid = user.ref_code)`,
-                    'totalCommissionEarned',
-                )
-                .addSelect(
-                    `(SELECT COALESCE(SUM(total_amount), 0) FROM affiliate_withdrawal_requests WHERE affiliate_uid = user.ref_code AND status = 'PAID')`,
-                    'totalPaid',
-                )
-                .addSelect(
-                    `(SELECT COALESCE(SUM(total_amount), 0) FROM affiliate_withdrawal_requests WHERE affiliate_uid = user.ref_code AND status = 'ACCEPTED')`,
-                    'pendingPayment',
-                )
-                .addSelect(
-                    `(SELECT COALESCE(SUM(amount), 0) FROM affiliate_commissions WHERE affiliate_uid = user.ref_code AND status = 'AVAILABLE')`,
-                    'availableToWithdraw',
-                )
-                .where('user.ref_code = :uid', { uid })
-                .getRawOne(),
+            this.buildAffiliateMetricsQuery().where('user.ref_code = :uid', { uid }).getRawOne(),
             this.withdrawalRepo.find({
                 where: { affiliate_uid: uid },
                 order: { created_at: 'DESC' },
-                take: 10,
+                take: 10
             }),
-            this.auditLogRepo
-                .createQueryBuilder('log')
-                .leftJoin('users', 'admin', 'admin.id = log.performed_by')
-                .select([
-                    'log.id AS id',
-                    'log.action AS action',
-                    'log.note AS note',
-                    'log.created_at AS "createdAt"',
-                    'admin.email AS "performedByEmail"',
-                ])
-                .where('log.affiliate_uid = :uid', { uid })
-                .andWhere('log.action = :action', { action: AuditAction.STATUS_CHANGE })
-                .orderBy('log.created_at', 'DESC')
-                .limit(10)
-                .getRawMany(),
+            this.getStatusLogs(uid, 10)
         ]);
 
+        if (!metrics) {
+            throw new NotFoundException('Affiliate not found');
+        }
+
         return {
-            ...metrics,
-            totalInvitees: Number(metrics.totalInvitees),
-            totalCommissionEarned: Number(metrics.totalCommissionEarned),
-            totalPaid: Number(metrics.totalPaid),
-            pendingPayment: Number(metrics.pendingPayment),
-            availableToWithdraw: Number(metrics.availableToWithdraw),
+            ...this.castMetricsRow(metrics),
             recentRequests,
-            statusLogs,
+            statusLogs
         };
     }
 
@@ -188,27 +128,26 @@ export class AdminAffiliateService {
                 action: AuditAction.STATUS_CHANGE,
                 affiliate_uid: uid,
                 performed_by: adminId,
-                note: reason,
-            }),
+                note: reason
+            })
         );
 
         return { message: 'Status updated successfully' };
     }
 
-    async getStatusLogs(uid: string) {
-        return this.auditLogRepo
+    async getStatusLogs(uid: string, limit?: number) {
+        const qb = this.auditLogRepo
             .createQueryBuilder('log')
             .leftJoin('users', 'admin', 'admin.id = log.performed_by')
-            .select([
-                'log.id AS id',
-                'log.action AS action',
-                'log.note AS note',
-                'log.created_at AS "createdAt"',
-                'admin.email AS "performedByEmail"',
-            ])
+            .select(['log.id AS id', 'log.action AS action', 'log.note AS note', 'log.created_at AS "createdAt"', 'admin.email AS "performedByEmail"'])
             .where('log.affiliate_uid = :uid', { uid })
             .andWhere('log.action = :action', { action: AuditAction.STATUS_CHANGE })
-            .orderBy('log.created_at', 'DESC')
-            .getRawMany();
+            .orderBy('log.created_at', 'DESC');
+
+        if (limit) {
+            qb.limit(limit);
+        }
+
+        return qb.getRawMany();
     }
 }

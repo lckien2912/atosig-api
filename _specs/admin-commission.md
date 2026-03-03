@@ -4,6 +4,8 @@
 
 The `AdminCommissionModule` provides admin-only endpoints for managing affiliate withdrawal requests. It extends the basic admin routes in `AffiliateController` with a dedicated controller offering expanded capabilities: listing, detail view, approve/reject/hold/release-hold/revert/bulk-action, and full audit logging.
 
+For affiliate **user** management (status changes, affiliate metrics), see [admin-affiliate.md](./admin-affiliate.md).
+
 ---
 
 ## Architecture
