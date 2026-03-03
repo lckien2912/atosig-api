@@ -24,6 +24,8 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { AffiliateModule } from './affiliate/affiliate.module';
 import { AdminCommissionModule } from './admin-commission/admin-commission.module';
 import { AffiliatePaymentModule } from './affiliate-payment/affiliate-payment.module';
+import { AdminAffiliateModule } from './admin-affiliate/admin-affiliate.module';
+import { AffiliateDashboardModule } from './affiliate-dashboard/affiliate-dashboard.module';
 
 @Module({
     imports: [
@@ -65,7 +67,9 @@ import { AffiliatePaymentModule } from './affiliate-payment/affiliate-payment.mo
         TelegramModule,
         AffiliateModule,
         AdminCommissionModule,
-        AffiliatePaymentModule
+        AffiliatePaymentModule,
+        AdminAffiliateModule,
+        AffiliateDashboardModule
     ],
     controllers: [AppController],
     providers: [AppService]

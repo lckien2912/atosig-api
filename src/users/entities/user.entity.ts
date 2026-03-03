@@ -1,5 +1,5 @@
-import { BeforeInsert, Column, Entity, PrimaryGeneratedColumn } from "typeorm";
-import { KycStatus, LoginType, UserRole, UserSubscriptionTier } from "../enums/user-status.enum";
+import { BeforeInsert, Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { AffiliateStatus, AffiliateTier, KycStatus, LoginType, UserRole, UserSubscriptionTier } from '../enums/user-status.enum';
 import { v4 as uuidv4 } from 'uuid';
 
 @Entity('users')
@@ -7,19 +7,19 @@ export class User {
     @PrimaryGeneratedColumn('uuid')
     id: string;
 
-    @Column({ type: "varchar", nullable: false })
+    @Column({ type: 'varchar', nullable: false })
     full_name: string;
 
-    @Column({ type: "varchar", nullable: false, unique: true })
+    @Column({ type: 'varchar', nullable: false, unique: true })
     email: string;
 
-    @Column({ type: "varchar", select: false, nullable: true })
+    @Column({ type: 'varchar', select: false, nullable: true })
     password?: string;
 
-    @Column({ type: "text", nullable: true })
+    @Column({ type: 'text', nullable: true })
     avatar_url: string;
 
-    @Column({ type: "varchar", nullable: true })
+    @Column({ type: 'varchar', nullable: true })
     phone_number: string;
 
     @Column({ type: 'enum', enum: KycStatus, default: KycStatus.UNVERIFIED })
@@ -58,7 +58,6 @@ export class User {
     @Column({ type: 'varchar', nullable: true })
     avatar: string;
 
-
     @Column({ type: 'varchar', unique: true, nullable: true })
     ref_code: string;
 
@@ -68,13 +67,19 @@ export class User {
     @Column({ type: 'enum', enum: LoginType, default: LoginType.EMAIL })
     login_type: LoginType;
 
+    @Column({ type: 'enum', enum: AffiliateStatus, default: AffiliateStatus.ACTIVE })
+    affiliate_status: AffiliateStatus;
+
+    @Column({ type: 'enum', enum: AffiliateTier, default: AffiliateTier.INDIVIDUAL })
+    affiliate_tier: AffiliateTier;
+
     // @OneToMany(() => UserFavorite, (fav) => fav.user)
     // favorites: UserFavorite[];
 
-    @Column({ type: "timestamp", default: () => 'CURRENT_TIMESTAMP' })
+    @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
     created_at: Date;
 
-    @Column({ type: "timestamp", default: () => 'CURRENT_TIMESTAMP', onUpdate: 'CURRENT_TIMESTAMP' })
+    @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP', onUpdate: 'CURRENT_TIMESTAMP' })
     updated_at: Date;
 
     @BeforeInsert()

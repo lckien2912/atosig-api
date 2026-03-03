@@ -63,7 +63,7 @@ export class CreateAffiliateAdminStructures1772500000000 implements MigrationInt
 
         // 5. Add affiliate_status + affiliate_tier to users
         await queryRunner.query(`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "affiliate_status" varchar(20) NOT NULL DEFAULT 'ACTIVE'`);
-        await queryRunner.query(`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "affiliate_tier"   varchar(20) NOT NULL DEFAULT 'STANDARD'`);
+        await queryRunner.query(`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "affiliate_tier"   varchar(20) NOT NULL DEFAULT 'INDIVIDUAL'`);
         await queryRunner.query(`CREATE INDEX "idx_users_affiliate_status" ON "users" ("affiliate_status") WHERE ref_code IS NOT NULL`);
     }
 

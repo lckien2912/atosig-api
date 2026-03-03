@@ -1,22 +1,21 @@
 export enum UserSubscriptionTier {
     FREE = 'FREE',
     BASIC = 'BASIC',
-    PREMIUM = 'PREMIUM',
+    PREMIUM = 'PREMIUM'
 }
 
 export enum DuarationDays {
     WEEK = 7,
     ONE_MONTH = 30,
-    THREE_MONTH = 90,
+    THREE_MONTH = 90
 }
-
 
 // Enum cho định danh (KYC sau này)
 export enum KycStatus {
     UNVERIFIED = 'UNVERIFIED', // Chưa xác minh
-    PENDING = 'PENDING',       // Đang chờ duyệt
-    VERIFIED = 'VERIFIED',     // Đã xác minh
-    REJECTED = 'REJECTED'      // Bị từ chối
+    PENDING = 'PENDING', // Đang chờ duyệt
+    VERIFIED = 'VERIFIED', // Đã xác minh
+    REJECTED = 'REJECTED' // Bị từ chối
 }
 
 export enum UserStatus {
@@ -26,7 +25,7 @@ export enum UserStatus {
 }
 export enum UserRole {
     ADMIN = 'ADMIN',
-    USER = 'USER',
+    USER = 'USER'
 }
 
 export enum LoginType {
@@ -40,4 +39,15 @@ export enum VerificationType {
     VERIFIED = 'VERIFIED',
     CHANGE_PASSWORD = 'CHANGE_PASSWORD',
     CHANGE_EMAIL = 'CHANGE_EMAIL'
+}
+
+export enum AffiliateStatus {
+    ACTIVE = 'ACTIVE',
+    SUSPENDED = 'SUSPENDED',
+    INACTIVE = 'INACTIVE'
+}
+
+export enum AffiliateTier {
+    INDIVIDUAL = 'INDIVIDUAL',
+    CORP = 'CORP'
 }

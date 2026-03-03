@@ -5,5 +5,6 @@ export enum AuditAction {
     RELEASE = 'RELEASE',
     AUTO_APPROVE = 'AUTO_APPROVE',
     REVERT = 'REVERT',
-    MARK_PAID = 'MARK_PAID'
+    MARK_PAID = 'MARK_PAID',
+    STATUS_CHANGE = 'STATUS_CHANGE'
 }
