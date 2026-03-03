@@ -23,6 +23,7 @@ import { TelegramModule } from './telegram/telegram.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AffiliateModule } from './affiliate/affiliate.module';
 import { AdminCommissionModule } from './admin-commission/admin-commission.module';
+import { AffiliatePaymentModule } from './affiliate-payment/affiliate-payment.module';
 
 @Module({
     imports: [
@@ -63,7 +64,8 @@ import { AdminCommissionModule } from './admin-commission/admin-commission.modul
         MarketModule,
         TelegramModule,
         AffiliateModule,
-        AdminCommissionModule
+        AdminCommissionModule,
+        AffiliatePaymentModule
     ],
     controllers: [AppController],
     providers: [AppService]
