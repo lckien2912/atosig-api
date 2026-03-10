@@ -24,7 +24,7 @@ import { WithdrawalStatus } from './enums/withdrawal-status.enum';
 import { WithdrawalRequestStatus } from './enums/withdrawal-request-status.enum';
 import { handleAffiliateError, handleAxiosError } from './helpers/affiliate-error-handler';
 import { User } from '../users/entities/user.entity';
-import { AffiliateWithdrawal } from './entities/affiliate-withdrawal.entity';
+import { AffiliateCommission } from './entities/affiliate-commission.entity';
 import { AffiliateWithdrawalRequest } from './entities/affiliate-withdrawal-request.entity';
 import { UserSubscription } from '../pricing/entities/user-subscription.entity';
 import { SubscriptionStatus } from '../pricing/enums/pricing.enum';
@@ -41,8 +41,8 @@ export class AffiliateService {
         private readonly configService: ConfigService,
         @InjectRepository(User)
         private readonly userRepository: Repository<User>,
-        @InjectRepository(AffiliateWithdrawal)
-        private readonly withdrawalRepository: Repository<AffiliateWithdrawal>,
+        @InjectRepository(AffiliateCommission)
+        private readonly commissionRepository: Repository<AffiliateCommission>,
         @InjectRepository(AffiliateWithdrawalRequest)
         private readonly withdrawalRequestRepository: Repository<AffiliateWithdrawalRequest>,
         @InjectRepository(UserSubscription)
@@ -141,7 +141,7 @@ export class AffiliateService {
                 const commissions = responseData.data?.commissions ?? [];
                 if (commissions.length > 0) {
                     // Idempotency: find existing entries for this order
-                    const existingEntries = await this.withdrawalRepository.find({
+                    const existingEntries = await this.commissionRepository.find({
                         where: { source_order_id: orderId },
                         select: ['affiliate_uid']
                     });
@@ -150,7 +150,7 @@ export class AffiliateService {
                     const newEntries = commissions
                         .filter(c => c.amount > 0 && !existingUids.has(c.uid))
                         .map(c =>
-                            this.withdrawalRepository.create({
+                            this.commissionRepository.create({
                                 affiliate_uid: c.uid,
                                 amount: c.amount,
                                 status: WithdrawalStatus.AVAILABLE,
@@ -160,7 +160,7 @@ export class AffiliateService {
                         );
 
                     if (newEntries.length > 0) {
-                        await this.withdrawalRepository.save(newEntries);
+                        await this.commissionRepository.save(newEntries);
                         this.logger.log(`Created ${newEntries.length} commission entries for order: ${orderId} — ` + newEntries.map(e => `${e.affiliate_uid} (L${e.level}): ${e.amount}`).join(', '));
                     }
                 }
@@ -203,12 +203,12 @@ export class AffiliateService {
             const overviewData = responseData.data;
 
             const [available, withdrawn] = await Promise.all([
-                this.withdrawalRepository
+                this.commissionRepository
                     .createQueryBuilder('w')
                     .select('SUM(w.amount)', 'total')
                     .where('w.affiliate_uid = :uid AND w.status = :status', { uid, status: WithdrawalStatus.AVAILABLE })
                     .getRawOne(),
-                this.withdrawalRepository
+                this.commissionRepository
                     .createQueryBuilder('w')
                     .select('SUM(w.amount)', 'total')
                     .innerJoin('w.withdrawal_request', 'r', 'r.status = :reqStatus', { reqStatus: WithdrawalRequestStatus.ACCEPTED })
@@ -492,7 +492,7 @@ export class AffiliateService {
      * User requests withdrawal of all AVAILABLE commissions
      */
     async requestWithdrawal(affiliateUid: string, dto: CreateWithdrawalRequestDto) {
-        const available = await this.withdrawalRepository.find({
+        const available = await this.commissionRepository.find({
             where: { affiliate_uid: affiliateUid, status: WithdrawalStatus.AVAILABLE }
         });
         if (available.length === 0) throw new BadRequestException('No available commission to withdraw');
@@ -510,7 +510,7 @@ export class AffiliateService {
 
         // Link commissions to the request and mark as WITHDRAWN
         const commissionIds = available.map(e => e.id);
-        await this.withdrawalRepository.update(commissionIds, {
+        await this.commissionRepository.update(commissionIds, {
             status: WithdrawalStatus.WITHDRAWN,
             withdrawal_request_id: request.id
         });
@@ -593,9 +593,9 @@ export class AffiliateService {
         await this.withdrawalRequestRepository.save(request);
 
         // If rejected, unlink commissions and revert to AVAILABLE
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
+
         if (dto.status === WithdrawalRequestStatus.REJECTED) {
-            await this.withdrawalRepository.update({ withdrawal_request_id: request.id }, { status: WithdrawalStatus.AVAILABLE, withdrawal_request_id: null });
+            await this.commissionRepository.update({ withdrawal_request_id: request.id }, { status: WithdrawalStatus.AVAILABLE, withdrawal_request_id: null });
         }
 
         return request;

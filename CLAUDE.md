@@ -33,6 +33,7 @@ API is served at `http://localhost:4033/api/v1`. Swagger docs at `/api/docs`.
 **Framework:** NestJS 11 with TypeORM 0.3 on PostgreSQL.
 
 **Module structure:** Each feature follows the same pattern:
+
 - `<feature>.module.ts` — wires dependencies
 - `<feature>.controller.ts` — HTTP routes
 - `<feature>.service.ts` — business logic
@@ -41,12 +42,14 @@ API is served at `http://localhost:4033/api/v1`. Swagger docs at `/api/docs`.
 - `enums/` — shared constants
 
 **Global setup (main.ts):**
+
 - API prefix: `/api/v1`
 - `ValidationPipe` (whitelist mode) — strips unknown fields
 - `TransformInterceptor` — wraps all responses in `{ data, message, statusCode }`
 - `HttpExceptionFilter` — centralized error formatting
 
 **Key modules:**
+
 - `auth/` — JWT + Google OAuth2; produces access/refresh tokens
 - `users/` — user CRUD; refs affiliate tree structure
 - `affiliate/` — affiliate program with commission tracking
@@ -62,6 +65,7 @@ API is served at `http://localhost:4033/api/v1`. Swagger docs at `/api/docs`.
 **Data source:** `src/data-source.ts` is the TypeORM CLI config (used by migration commands). The app itself uses the config in `app.module.ts`. `synchronize` is **disabled** — always use migrations for schema changes.
 
 **Auth guards:**
+
 - `JwtAuthGuard` — requires valid bearer token (default on protected routes)
 - `OptionalJwtAuthGuard` — attaches user if token present, allows anonymous
 
@@ -74,3 +78,8 @@ API is served at `http://localhost:4033/api/v1`. Swagger docs at `/api/docs`.
 ## Environment
 
 Copy `.env` and fill in values. Required vars: `DB_*`, `JWT_SECRET`, `JWT_ACCESS_EXPIRATION`, `JWT_REFRESH_EXPIRATION`, `VNP_*`, `MOMO_*`, `MAIL_*`, `GOOGLE_*`, `SSI_*`, `AFFILIATE_*`, `APP_URL`, `FRONTEND_URL`.
+
+## SPECS
+
+- When I ask to change any feature, if you don't have context about that feature, please read it in @\_specs folder. If specs of that feature is not existed, generate a high-level specs for it like @\_specs/affiliate.md
+- If feature have any update, also update the specs with updated time.

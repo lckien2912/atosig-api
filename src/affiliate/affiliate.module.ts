@@ -5,7 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AffiliateService } from './affiliate.service';
 import { AffiliateController } from './affiliate.controller';
 import { User } from '../users/entities/user.entity';
-import { AffiliateWithdrawal } from './entities/affiliate-withdrawal.entity';
+import { AffiliateCommission } from './entities/affiliate-commission.entity';
 import { AffiliateWithdrawalRequest } from './entities/affiliate-withdrawal-request.entity';
 import { UserSubscription } from '../pricing/entities/user-subscription.entity';
 import { SubscriptionPlan } from '../pricing/entities/subscription-plan.entity';
@@ -17,7 +17,7 @@ import { SubscriptionPlan } from '../pricing/entities/subscription-plan.entity';
             maxRedirects: 5
         }),
         ConfigModule,
-        TypeOrmModule.forFeature([User, AffiliateWithdrawal, AffiliateWithdrawalRequest, UserSubscription, SubscriptionPlan])
+        TypeOrmModule.forFeature([User, AffiliateCommission, AffiliateWithdrawalRequest, UserSubscription, SubscriptionPlan])
     ],
     controllers: [AffiliateController],
     providers: [AffiliateService],

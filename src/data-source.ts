@@ -11,8 +11,10 @@ import { UserSubscription } from './pricing/entities/user-subscription.entity';
 import { PaymentTransaction } from './payment/entities/payment-transaction.entity';
 import { Notification } from './notification/entities/notification.entity';
 import { NotificationRead } from './notification/entities/notification-read.entity';
-import { AffiliateWithdrawal } from './affiliate/entities/affiliate-withdrawal.entity';
+import { AffiliateCommission } from './affiliate/entities/affiliate-commission.entity';
 import { AffiliateWithdrawalRequest } from './affiliate/entities/affiliate-withdrawal-request.entity';
+import { CommissionAuditLog } from './affiliate/entities/commission-audit-log.entity';
+import { AffiliatePayment } from './affiliate/entities/affiliate-payment.entity';
 
 const isCompiled = __filename.endsWith('.js');
 const migrationsDir = isCompiled ? join(__dirname, 'migrations', '*.js') : join(__dirname, 'migrations', '*.ts');
@@ -35,8 +37,10 @@ export default new DataSource({
         PaymentTransaction,
         Notification,
         NotificationRead,
-        AffiliateWithdrawal,
-        AffiliateWithdrawalRequest
+        AffiliateCommission,
+        AffiliateWithdrawalRequest,
+        CommissionAuditLog,
+        AffiliatePayment
     ],
     migrations: [migrationsDir],
     migrationsTableName: 'migrations',

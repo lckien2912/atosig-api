@@ -24,17 +24,23 @@ PostgreSQL (local)
 ├── users
 │   ├── ref_code  — user's unique referral code (affiliate ID)
 │   └── ref_from  — referrer's ref_code at signup time
-└── affiliate_withdrawals
-    └── one row per commission entry; tracks AVAILABLE → REQUESTED → ACCEPTED/REJECTED lifecycle
+├── affiliate_withdrawals
+│   └── one row per commission entry; tracks AVAILABLE → WITHDRAWN lifecycle
+│       Fields: id, affiliate_uid, amount, status, source_order_id, level,
+│               withdrawal_request_id (FK), created_at, updated_at
+└── affiliate_withdrawal_requests
+    └── one row per withdrawal request batch; tracks PENDING → ACCEPTED/REJECTED lifecycle
+        Fields: id, affiliate_uid, total_amount, status, user_note, admin_note,
+                processed_by, processed_at, created_at, updated_at
 ```
 
 All commission computation and tree management live in the external microservice. The NestJS module:
 
 1. Syncs user creation events to the external service.
-2. Forwards order events after successful payments and creates a local commission entry for the referrer.
-3. Proxies read queries (overview, invitees, commissions) and enriches them with emails from the local DB.
+2. Forwards order events after successful payments and creates local commission entries for all ancestors.
+3. Proxies read queries (overview, invitees, commissions) and enriches them with local user data (email, phone, active subscription package).
 4. Enforces access-control rules (e.g., rate changes only for direct invitees).
-5. Manages commission withdrawal requests locally (request → admin approve/reject).
+5. Manages commission withdrawal requests locally (user requests → admin approve/reject).
 
 ---
 
@@ -44,27 +50,33 @@ All commission computation and tree management live in the external microservice
 
 1. A new user registers via a referral link containing `?ref=<ref_code>`.
 2. `ref_from` is stored on the new user; `createAffiliateUser()` registers both in the external service.
+   - Before registering, the service verifies the referrer exists via `getUserOverview(refUid)`. If not found, the request is sent without `refUid`.
 3. When the referred user subscribes and pays:
     - The payment service calls `createOrder()` with transaction details.
     - The external service calculates multi-level commissions (up to level 3) and returns them in the response's `commissions[]` array.
     - The NestJS service creates local `affiliate_withdrawals` entries for **all ancestor levels** using the external service response:
         - Reads `commissions[]` from the external service's `POST /api/v1/orders` response.
         - For each commission entry: inserts a row with `affiliate_uid`, `amount` (from external service), `level`, `status = AVAILABLE`, and `source_order_id = orderId`.
-        - Skips if `amount <= 0` or if a row for `(source_order_id, affiliate_uid)` already exists (idempotent).
+        - Skips if `amount <= 0` or if a row for `(source_order_id, affiliate_uid)` already exists (idempotent — checked via a pre-query before insert).
         - No local re-calculation — the external service handles precision with BigDecimal FLOOR.
+        - Commission creation failures are caught and logged without propagating (does not fail the order response).
 
 ### Requesting withdrawal
 
-1. User calls `POST /withdrawals/request`.
-2. All `AVAILABLE` rows for that user transition to `REQUESTED` in one update.
-3. The response returns the count and total amount of rows moved.
+1. User calls `POST /withdrawals/request` with an optional `note`.
+2. All `AVAILABLE` commission entries for that user are fetched; if none exist, `400 Bad Request` is returned.
+3. An `affiliate_withdrawal_requests` record is created with `status = PENDING`, `total_amount` (sum of all available commissions), and `user_note`.
+4. All linked `affiliate_withdrawals` entries are updated to `status = WITHDRAWN` and linked via `withdrawal_request_id`.
+5. The response returns the created withdrawal request object.
 
 ### Admin processing
 
-1. Admin reviews `GET /admin/withdrawals?status=REQUESTED`.
-2. Admin calls `PATCH /admin/withdrawals/:id` with `{ status: "ACCEPTED" }` or `{ status: "REJECTED" }`.
-3. On `ACCEPTED`: row is finalised; `totalWithdrawn` on the overview increases.
-4. On `REJECTED`: row reverts to `AVAILABLE`; user may request again.
+1. Admin reviews `GET /admin/withdrawals?status=PENDING` (or any status filter).
+2. Admin calls `PATCH /admin/withdrawals/:id` with `{ status: "ACCEPTED" | "REJECTED", admin_note?: string }`.
+   - The `id` refers to an `affiliate_withdrawal_requests` row, not an individual commission entry.
+3. On `ACCEPTED`: request status is set to `ACCEPTED`; `totalWithdrawn` on the overview increases (reflects WITHDRAWN commissions linked to ACCEPTED requests).
+4. On `REJECTED`: request status is set to `REJECTED`; all linked `affiliate_withdrawals` revert to `status = AVAILABLE` and `withdrawal_request_id` is cleared — user may request again.
+5. `400 Bad Request` is returned if the request status is not `PENDING`.
 
 ### Commission rates
 
@@ -78,6 +90,30 @@ The external service tracks multi-level commissions (up to level 3). Local `affi
 
 ---
 
+## Withdrawal Status Enums
+
+### `WithdrawalStatus` (on `affiliate_withdrawals`)
+
+| Value       | Meaning                                                       |
+| ----------- | ------------------------------------------------------------- |
+| `PENDING`   | Commission on hold (e.g. refund window) — not yet withdrawable |
+| `AVAILABLE` | Commission ready to withdraw                                  |
+| `WITHDRAWN` | Linked to a withdrawal request                                |
+
+### `WithdrawalRequestStatus` (on `affiliate_withdrawal_requests`)
+
+| Value      | Meaning                                        |
+| ---------- | ---------------------------------------------- |
+| `PENDING`  | Waiting for admin review                       |
+| `ACCEPTED` | Admin approved; funds should be transferred    |
+| `REJECTED` | Admin rejected; linked commissions reverted    |
+| `PAID`     | Payment confirmed (terminal)                   |
+| `REVERTED` | Admin reverted after accept/reject (terminal)  |
+
+See [admin-commission.md](./admin-commission.md) for the full withdrawal request lifecycle (HOLD, approve/reject/revert/mark-paid transitions).
+
+---
+
 ## External Service API
 
 All requests include header `X-API-KEY: <AFFILIATE_API_KEY>`.
@@ -87,55 +123,74 @@ All requests include header `X-API-KEY: <AFFILIATE_API_KEY>`.
 | POST   | `/api/v1/users`                  | `createAffiliateUser()` | Register user in affiliate tree      |
 | POST   | `/api/v1/orders`                 | `createOrder()`         | Record purchase, trigger commissions |
 | GET    | `/api/v1/users/overview/:uid`    | `getUserOverview()`     | Fetch user stats + commission rate   |
-| GET    | `/api/v1/users/invitees/:uid`    | `getUserInvitees()`     | List direct children                 |
+| GET    | `/api/v1/users/invitees/:uid`    | `getUserInvitees()`     | List invitees (paginated)            |
 | GET    | `/api/v1/users/commissions/:uid` | `getUserCommissions()`  | List commission records              |
 | POST   | `/api/v1/users/update-rate`      | `updateRate()`          | Change invitee commission rate       |
 
 ---
 
-## Business Rules Summary
+## HTTP Endpoints
 
-| Rule                                                        | Enforcement                                                        |
-| ----------------------------------------------------------- | ------------------------------------------------------------------ |
-| Every registered user gets a unique `ref_code`              | User entity, unique DB constraint                                  |
-| `createAffiliateUser()` failure does not break registration | Async call after transaction commit                                |
-| `createOrder()` only fires when `user.ref_code` is set      | Guard in payment service                                           |
-| Commission rate updates restricted to direct invitees       | `updateRate()` validates `overview.refUid === sourceUid`           |
-| Rate must be 0–100%                                         | DTO `@Min(0) @Max(100)` validation                                 |
-| Pagination default date range                               | Jan 1, 2026 — today+1 day (applied if `fromDate`/`toDate` omitted) |
-| Invitee list shows direct children only                     | Query parameter passed to external service                         |
-| Invitee emails enriched locally                             | Batch lookup against `users.ref_code`                              |
-| Commission entries created for all ancestor levels per order | `createOrder()` reads `commissions[]` from external API response   |
-| Duplicate commission per (order, uid) prevented             | Composite unique index on `(source_order_id, affiliate_uid)`; existence check before insert |
-| Zero-amount commissions not recorded                        | `if (commissionAmount > 0)` guard                                  |
-| Withdrawal request moves ALL AVAILABLE entries              | Single `UPDATE WHERE status = AVAILABLE` per user                  |
-| Cannot request withdrawal with no AVAILABLE entries         | `400 Bad Request` from `requestWithdrawal()`                       |
-| Only REQUESTED entries can be processed by admin            | `400 Bad Request` if status ≠ REQUESTED in `processWithdrawal()`   |
-| REJECTED entries revert to AVAILABLE (user can re-request)  | Status set to `AVAILABLE` on REJECTED                              |
-| Admin-only routes protected by role                         | `RolesGuard` checks `user.role === ADMIN`                          |
-| `availableToWithdraw` reflects only AVAILABLE entries       | Aggregate query excludes REQUESTED/ACCEPTED/REJECTED               |
-| `totalWithdrawn` reflects only ACCEPTED entries             | Aggregate query in `getUserOverview()`                             |
+All routes are under `/api/v1/affiliate` and require a valid JWT (`JwtAuthGuard`).
+
+| Method | Path                        | Guard                       | Description                                      |
+| ------ | --------------------------- | --------------------------- | ------------------------------------------------ |
+| GET    | `/overview`                 | JwtAuthGuard                | User's affiliate overview (falls back to defaults if not found in external service) |
+| GET    | `/invitees`                 | JwtAuthGuard                | Paginated invitee list with email/phone/package  |
+| GET    | `/commissions`              | JwtAuthGuard                | Paginated commission history                     |
+| POST   | `/update-rate`              | JwtAuthGuard                | Update commission rate for a direct invitee      |
+| POST   | `/withdrawals/request`      | JwtAuthGuard                | Request withdrawal of all AVAILABLE commissions  |
+| GET    | `/withdrawals`              | JwtAuthGuard                | User's own withdrawal request history            |
+| GET    | `/admin/withdrawals`        | JwtAuthGuard + RolesGuard   | All withdrawal requests (admin only)             |
+| PATCH  | `/admin/withdrawals/:id`    | JwtAuthGuard + RolesGuard   | Accept or reject a withdrawal request (admin only) |
+
+See also: [admin-affiliate.md](./admin-affiliate.md) for affiliate user management and [admin-commission.md](./admin-commission.md) for expanded withdrawal request management.
 
 ---
 
-## Q&A
+## Invitee List Filtering
 
-### Q: Can we compute available commission as `totalCommission - claimedCommission`?
+`GET /invitees` supports two query paths depending on active filters:
 
-**Short answer:** Not safely — there are edge cases that make subtraction unreliable.
+**Path A — local filtering** (when `search` or `package` is provided):
+- Fetches up to 1000 invitees from the external service.
+- Enriches each with local `email`, `phone_number`, and active subscription `package` (plan name).
+- Applies `search` filter against invitee `uid`, `email`, and `phone_number`.
+- Applies `package` filter against the active subscription plan name.
+- Paginates the filtered results locally.
 
-**Edge cases:**
+**Path B — external pagination** (no `search` or `package`):
+- Delegates `page` and `size` directly to the external service.
+- Enriches the page of results with local `email`, `phone`, and `package`.
+- Returns pagination metadata from the external service response.
 
-1. **REQUESTED status (biggest risk):** When a user requests withdrawal, entries move `AVAILABLE → REQUESTED`. These are neither claimed (ACCEPTED) nor available. Subtraction would count them as "available", inflating what the user thinks they can withdraw.
+Both paths support `level`, `fromDate`, and `toDate` as pass-through params to the external service.
 
-2. **Data source mismatch:** `totalCommissions` comes from the external affiliate service, while claimed/withdrawn amounts come from the local `affiliate_withdrawals` table. If these drift out of sync (e.g., external service records a commission but local entry creation fails), the subtraction produces incorrect results.
+---
 
-3. **PENDING status (future use):** The enum defines `PENDING` for commissions on hold (e.g., refund window). If used later, those amounts would incorrectly appear as "available" via subtraction.
+## Business Rules Summary
 
-4. **REJECTED re-cycling:** When admin rejects a withdrawal, status reverts to `AVAILABLE` (not kept as REJECTED). Subtraction handles this correctly since it was never ACCEPTED, but the status flow is worth noting.
-
-**Recommendation:** Query each bucket directly from the `affiliate_withdrawals` table instead of using subtraction. The current implementation already does this:
-- `availableToWithdraw` = SUM where status = `AVAILABLE`
-- `totalWithdrawn` = SUM where status = `ACCEPTED`
-
-Adding a `claimedCommission` field follows the same pattern and avoids all edge cases above.
+| Rule                                                                | Enforcement                                                                                  |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Every registered user gets a unique `ref_code`                      | User entity, unique DB constraint                                                            |
+| `createAffiliateUser()` failure does not break registration         | Async call after transaction commit                                                          |
+| `createOrder()` only fires when `user.ref_code` is set              | Guard in payment service                                                                     |
+| Referrer existence verified before `createAffiliateUser()`          | `getUserOverview(refUid)` called; `refUid` omitted if not found                              |
+| Commission rate updates restricted to direct invitees               | `updateRate()` validates `targetOverview.refUid === sourceUid`                               |
+| Rate must be 0–100%                                                 | DTO `@Min(0) @Max(100)` validation                                                           |
+| Pagination default date range                                       | Jan 1, 2026 — today+1 day (applied if `fromDate`/`toDate` omitted)                          |
+| Invitee list shows direct children only by default                  | Query parameter passed to external service                                                   |
+| Invitee responses enriched locally                                  | Batch lookup for `email`, `phone`, and active subscription `package`                         |
+| Commission entries created for all ancestor levels per order        | `createOrder()` reads `commissions[]` from external API response                             |
+| Duplicate commission per (order, uid) prevented                     | Pre-insert existence check against `affiliate_withdrawals` by `source_order_id`              |
+| Zero-amount commissions not recorded                                | `if (amount > 0)` guard                                                                      |
+| Commission creation errors do not fail the order response           | Wrapped in inner try/catch; error is logged only                                             |
+| Withdrawal request moves ALL AVAILABLE entries atomically           | Fetches all AVAILABLE, creates request, updates all to WITHDRAWN in one batch                |
+| Withdrawal request includes user note                               | Optional `note` field in `CreateWithdrawalRequestDto`                                        |
+| Cannot request withdrawal with no AVAILABLE entries                 | `400 Bad Request` from `requestWithdrawal()`                                                 |
+| Only PENDING requests can be processed by admin                     | `400 Bad Request` if status ≠ PENDING in `processWithdrawal()`                               |
+| REJECTED entries revert to AVAILABLE (user can re-request)          | Status set to `AVAILABLE` and `withdrawal_request_id` cleared on REJECTED                    |
+| Admin-only routes protected by role                                 | `RolesGuard` checks `user.role === ADMIN`                                                    |
+| `availableToWithdraw` reflects only AVAILABLE commission entries    | SUM query on `affiliate_withdrawals` where `status = AVAILABLE`                              |
+| `totalWithdrawn` reflects commissions linked to ACCEPTED requests   | SUM query on `affiliate_withdrawals` where `status = WITHDRAWN` joined to request `status = ACCEPTED` |
+| Overview falls back to empty defaults if user not found externally  | Controller returns zero-value object when service returns null                               |
